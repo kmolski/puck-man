@@ -1,4 +1,59 @@
+(require :alexandria)
 (require :sdl2)
+(require :str)
+(require :trivia)
+
+(setf *random-state* (make-random-state t))
+
+;; map stuff
+
+(defparameter *max-superdots* 5)
+
+(defun get-map-dimensions (input-stream)
+  (loop for line = (read-line input-stream nil)
+        while line
+            maximize (length line) into width
+            count line into height
+        finally (file-position input-stream)
+                (return (list width height))))
+
+(defun char->tile (character)
+  (trivia:match character
+    ((or #\- #\|) 'wall)
+    (#\A          'portalA)
+    (#\B          'portalB)
+    (#\C          'portalC)
+    (#\D          'portalD)
+    (#\.          'inaccessible)
+    (#\#          'spawn-gate)
+    (#\G          'ghost-spawn)
+    (#\P          'player-spawn)
+    (_            'empty)))
+
+(defun portal-p (tile)
+  (trivia:match tile
+    ((or 'portalA 'portalB 'portalC 'portalD) t)
+    (_ nil)))
+
+(defun make-game-map (input-stream)
+  (let* ((map-dimensions (get-map-dimensions input-stream))
+         (tile-array (make-array map-dimensions :initial-element nil))
+         ())
+    (when (= (apply #'* map-dimensions) 0)
+      (error "The provided map is empty!"))
+    (make-instance 'game-map tile-array )))
+
+(defclass game-map ()
+  ((tiles :initarg :tiles
+          :initform (error "no value for slot 'tiles'")
+          :reader map-tile-at)
+   (max-ghosts )
+   (player-spawn)
+   (ghost-spawn-gate)
+   (ghost-spawns)
+   (portals)))
+
+;; game model stuff
 
 (defparameter *time-to-start* 10)
 (defparameter *default-lives* 3)
@@ -15,9 +70,8 @@
    (score :initform 0)
    (dots :initform 0)
    (lives :initform 0)
-   (timer )
-   (timer-start )
-   (time-at-pause )
+   (timer-start :initform (get-time-of-day))
+   (time-at-pause :initform 0)
    (stage :initform 'init)))
 
 (defparameter *window-width* 800)
@@ -41,7 +95,7 @@
                             (loop for x from 50 to (- *window-width* 50) by 150
                                   append (loop for y from 50 to (- *window-height* 50) by 150
                                                collect (sdl2:make-rect x y 100 100))))
-                   (sdl2:set-render-draw-color renderer 255 128 0 255)
+                   (sdl2:set-render-draw-color renderer 255 127 0 255)
                    (sdl2:render-fill-rects renderer rects num))
                  (sdl2:render-present renderer)
                  (sdl2:delay 33))
