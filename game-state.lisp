@@ -39,10 +39,10 @@
   (let* ((map-dimensions (get-map-dimensions input-stream))
          (tile-array (make-array map-dimensions :initial-element 'inaccessible))
          (current-pos (list 0 0))
-         (ghost-spawn-gate)
          (ghost-spawns (list))
-         (player-spawn)
-         (portals (list)))
+         (portals (list))
+         (ghost-spawn-gate)
+         (player-spawn))
     (when (= (apply #'* map-dimensions) 0)
       (error "The provided map is empty!"))
     (loop for char = (read-char input-stream nil)
@@ -63,23 +63,33 @@
           else
              do (progn (setf (second current-pos) 0)
                        (incf (first current-pos))))
-    (make-instance 'game-map
-                   :tiles tile-array
-                   :player-spawn player-spawn
-                   :ghost-spawn-gate ghost-spawn-gate
-                   :ghost-spawns ghost-spawns
-                   :max-ghosts (length ghost-spawns)
-                   :portals portals)))
+    (make-instance 'game-map :tiles tile-array
+                             :ghost-spawns ghost-spawns
+                             :portals portals
+                             :ghost-spawn-gate ghost-spawn-gate
+                             :player-spawn player-spawn)))
 
 (defclass game-map ()
   ((tiles :initarg :tiles
           :initform (error "no value for slot 'tiles'")
           :reader map-tile-at)
-   (player-spawn :initarg :player-spawn)
-   (ghost-spawn-gate :initarg :ghost-spawn-gate)
-   (ghost-spawns :initarg :ghost-spawns)
-   (max-ghosts :initarg :max-ghosts)
-   (portals :initarg :portals)))
+   (ghost-spawns :initarg :ghost-spawns
+                 :initform (error "no value for slot 'ghost-spawns'")
+                 :reader ghost-spawns)
+   (portals :initarg :portals
+            :initform (error "no value for slot 'portals'")
+            :reader map-portals)
+   (ghost-spawn-gate :initarg :ghost-spawn-gate
+                     :initform (error "no value for slot 'ghost-spawn-gate'")
+                     :reader ghost-spawn-gate)
+   (player-spawn :initarg :player-spawn
+                 :initform (error "no value for slot 'player-spawn'")
+                 :reader player-spawn)
+   (max-ghosts :reader max-ghosts)))
+
+(defmethod initialize-instance :after ((map game-map) &rest rest)
+  (declare (ignore rest))
+  (setf (slot-value map 'max-ghosts) (length (ghost-spawns map))))
 
 ;; game model stuff
 
