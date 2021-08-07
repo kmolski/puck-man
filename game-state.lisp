@@ -14,8 +14,8 @@
         while line
             maximize (length line) into width
             count line into height
-        finally (file-position input-stream)
-                (return (list width height))))
+        finally (file-position input-stream 0)
+                (return (list height width))))
 
 (defun char->tile (character)
   (trivia:match character
@@ -37,21 +37,49 @@
 
 (defun make-game-map (input-stream)
   (let* ((map-dimensions (get-map-dimensions input-stream))
-         (tile-array (make-array map-dimensions :initial-element nil))
-         ())
+         (tile-array (make-array map-dimensions :initial-element 'inaccessible))
+         (current-pos (list 0 0))
+         (ghost-spawn-gate)
+         (ghost-spawns (list))
+         (player-spawn)
+         (portals (list)))
     (when (= (apply #'* map-dimensions) 0)
       (error "The provided map is empty!"))
-    (make-instance 'game-map tile-array )))
+    (loop for char = (read-char input-stream nil)
+          for pos  = (copy-list current-pos)
+          while char
+          if (char/= char #\Newline)
+             do (let ((tile (char->tile char)))
+                  (trivia:match tile
+                    ('spawn-gate   (setf ghost-spawn-gate pos))
+                    ('ghost-spawn  (push pos ghost-spawns))
+                    ('player-spawn (setf player-spawn pos))
+                    ((or 'portalA 'portalB 'portalC 'portalD)
+                         (if (getf portals tile)
+                             (rplacd (getf portals tile) pos)
+                             (setf (getf portals tile) (cons pos nil)))))
+                  (setf (aref tile-array (first pos) (second pos)) tile)
+                  (incf (second current-pos)))
+          else
+             do (progn (setf (second current-pos) 0)
+                       (incf (first current-pos))))
+    (make-instance 'game-map
+                   :tiles tile-array
+                   :player-spawn player-spawn
+                   :ghost-spawn-gate ghost-spawn-gate
+                   :ghost-spawns ghost-spawns
+                   :max-ghosts (length ghost-spawns)
+                   :portals portals)))
 
 (defclass game-map ()
   ((tiles :initarg :tiles
           :initform (error "no value for slot 'tiles'")
           :reader map-tile-at)
-   (max-ghosts )
-   (player-spawn)
-   (ghost-spawn-gate)
-   (ghost-spawns)
-   (portals)))
+   (player-spawn :initarg :player-spawn)
+   (ghost-spawn-gate :initarg :ghost-spawn-gate)
+   (ghost-spawns :initarg :ghost-spawns)
+   (max-ghosts :initarg :max-ghosts)
+   (portals :initarg :portals)))
 
 ;; game model stuff
 
