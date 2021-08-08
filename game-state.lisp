@@ -72,7 +72,7 @@
 (defclass game-map ()
   ((tiles :initarg :tiles
           :initform (error "no value for slot 'tiles'")
-          :reader map-tile-at)
+          :reader map-tiles)
    (ghost-spawns :initarg :ghost-spawns
                  :initform (error "no value for slot 'ghost-spawns'")
                  :reader ghost-spawns)
@@ -90,6 +90,34 @@
 (defmethod initialize-instance :after ((map game-map) &rest rest)
   (declare (ignore rest))
   (setf (slot-value map 'max-ghosts) (length (ghost-spawns map))))
+
+(defun get-next-tile (position direction)
+  (destructuring-bind (y x) position
+    (trivia:match direction
+      ('up    (list (1- y) x))
+      ('left  (list y (1- x)))
+      ('down  (list (1+ y) x))
+      ('right (list y (1+ x)))
+      (_      (list y x)))))
+
+(defmethod tile-at ((map game-map) position)
+  (destructuring-bind (y x) position
+    (aref (map-tiles map) y x)))
+
+(defmethod get-other-portal ((map game-map) position)
+  ())
+
+(defmethod next-tile-exists-p ((map game-map) position direction)
+  ())
+
+(defmethod fill-with-dots ((map game-map))
+  ())
+
+(defmethod remove-all-dots ((map game-map))
+  ())
+
+(defmethod draw ((map game-map))
+  ())
 
 ;; game model stuff
 
