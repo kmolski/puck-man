@@ -61,8 +61,8 @@
                   (setf (aref tile-array (first pos) (second pos)) tile)
                   (incf (second current-pos)))
           else
-             do (progn (setf (second current-pos) 0)
-                       (incf (first current-pos))))
+             do (setf (second current-pos) 0)
+                (incf (first current-pos)))
     (make-instance 'game-map :tiles tile-array
                              :ghost-spawns ghost-spawns
                              :portals portals
