@@ -15,7 +15,7 @@
             maximize (length line) into width
             count line into height
         finally (file-position input-stream 0)
-                (return (list height width))))
+                (return (list width height))))
 
 (defun char->tile (character)
   (trivia:match character
@@ -59,10 +59,10 @@
                              (rplacd (getf portals tile) pos)
                              (setf (getf portals tile) (cons pos nil)))))
                   (setf (aref tile-array (first pos) (second pos)) tile)
-                  (incf (second current-pos)))
+                  (incf (first current-pos)))
           else
-             do (setf (second current-pos) 0)
-                (incf (first current-pos)))
+             do (setf (first current-pos) 0)
+                (incf (second current-pos)))
     (make-instance 'game-map :tiles tile-array
                              :ghost-spawns ghost-spawns
                              :portals portals
@@ -91,27 +91,40 @@
   (declare (ignore rest))
   (setf (slot-value map 'max-ghosts) (length (ghost-spawns map))))
 
-(defun get-next-tile (position direction)
-  (destructuring-bind (y x) position
+(defun get-next-tile-pos (position direction)
+  (destructuring-bind (x y) position
     (trivia:match direction
-      ('up    (list (1- y) x))
-      ('left  (list y (1- x)))
-      ('down  (list (1+ y) x))
-      ('right (list y (1+ x)))
-      (_      (list y x)))))
+      ('up    (list x (1- y)))
+      ('left  (list (1- x) y))
+      ('down  (list x (1+ y)))
+      ('right (list (1+ x) y))
+      (_      (error "invalid direction")))))
 
 (defmethod tile-at ((map game-map) position)
-  (destructuring-bind (y x) position
-    (aref (map-tiles map) y x)))
+  (destructuring-bind (x y) position
+    (aref (map-tiles map) x y)))
 
-(defmethod get-other-portal ((map game-map) position)
-  ())
+(defmethod get-other-portal-pos ((map game-map) position)
+  (let* ((tile (tile-at map position))
+         (portal-pair (getf (map-portals map) tile)))
+    (if (equal (car portal-pair) position)
+        (cdr portal-pair)
+        (car portal-pair))))
 
 (defmethod next-tile-exists-p ((map game-map) position direction)
-  ())
+  (let ((tile-array-dims (array-dimensions (map-tiles map)))
+        (pos-x (first position))
+        (pos-y (second position)))
+    (trivia:match direction
+      ('up    (> (floor pos-y) 0))
+      ('left  (> (floor pos-x) 0))
+      ('down  (< (ceiling pos-y) (1- (second tile-array-dims))))
+      ('right (< (ceiling pos-x) (1- (first tile-array-dims))))
+      (_      (error "invalid direction")))))
 
 (defmethod fill-with-dots ((map game-map))
-  ())
+  (remove-all-dots map)
+  (let ((dot-count 0))))
 
 (defmethod remove-all-dots ((map game-map))
   ())
