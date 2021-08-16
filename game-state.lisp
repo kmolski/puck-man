@@ -77,7 +77,7 @@
       (error "There must be a ghost spawn gate ('#') on the map!"))
     (when (= 0 (length ghost-spawns))
       (error "There must be at least one ghost spawn ('G') on the map!"))
-    (loop for (portal-name portal-mapping) on portals by 'cddr
+    (loop for (portal-name portal-mapping) on portals by #'cddr
           when (not (cdr portal-mapping))
             do (error "Incorrect mapping for portal ~a!" portal-name))
     (make-instance 'game-map :tiles tile-array
@@ -152,15 +152,40 @@
 
 (defmethod fill-with-dots ((map game-map))
   "Fill the map with regular and super dots."
-  (remove-all-dots map)
-  (let ((dot-count 0))))
+  (remove-all-dots map) ; Start by removing the remaining dots
+  (let* ((map-tiles (map-tiles map))
+         (map-dimensions (array-dimensions map-tiles))
+         (map-width  (first map-dimensions))
+         (map-height (second map-dimensions))
+         (superdots-left *max-superdots*)
+         (dot-count 0))
+    (loop while (> superdots-left 0) ; Place super-dots in random positions
+          for rand-x = (random map-width)
+          for rand-y = (random map-height)
+          when (eql (aref map-tiles rand-x rand-y) 'empty)
+            do (setf (aref map-tiles rand-x rand-y) 'super-dot)
+               (decf superdots-left))
+    (loop for y below map-height
+          do (loop for x below map-width
+                   when (eql (aref map-tiles x y) 'empty)
+                     do (setf (aref map-tiles x y) 'dot)
+                        (incf dot-count)))
+    dot-count))
 
 (defmethod remove-all-dots ((map game-map))
-  "Remove all dots from the map."
-  ())
+  "Remove all dots and super-dots from the map."
+  (let* ((map-tiles (map-tiles map))
+         (map-dimensions (array-dimensions map-tiles))
+         (map-width  (first map-dimensions))
+         (map-height (second map-dimensions)))
+    (loop for y below map-height
+          do (loop for x below map-width
+                   for tile = (aref map-tiles x y)
+                   when (or (eql tile 'dot) (eql tile 'super-dot))
+                     do (setf (aref map-tiles x y) 'empty)))))
 
 (defmethod draw ((map game-map))
-  "Draw the map to the given renderer."
+  "Draw the map with the given renderer."
   ())
 
 ;; game model stuff
