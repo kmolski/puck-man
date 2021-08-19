@@ -24,10 +24,10 @@
   "Convert a character to a map tile."
   (trivia:match character
     ((or #\- #\|) 'wall)
-    (#\A          'portalA)
-    (#\B          'portalB)
-    (#\C          'portalC)
-    (#\D          'portalD)
+    (#\A          'portal-A)
+    (#\B          'portal-B)
+    (#\C          'portal-C)
+    (#\D          'portal-D)
     (#\.          'inaccessible)
     (#\#          'spawn-gate)
     (#\G          'ghost-spawn)
@@ -37,7 +37,7 @@
 (defun portal-p (tile)
   "Returns T if the provided tile is a portal."
   (trivia:match tile
-    ((or 'portalA 'portalB 'portalC 'portalD) t)
+    ((or 'portal-A 'portal-B 'portal-C 'portal-D) t)
     (_ nil)))
 
 (defun make-game-map (input-stream)
@@ -60,10 +60,10 @@
                     ('spawn-gate   (setf ghost-spawn-gate pos))
                     ('ghost-spawn  (push pos ghost-spawns))
                     ('player-spawn (setf player-spawn pos))
-                    ((or 'portalA 'portalB 'portalC 'portalD)
+                    ((or 'portal-A 'portal-B 'portal-C 'portal-D)
                          (if (getf portals tile) ; If a record for the portal exists
                              ;; Set the other end of the mapping
-                             (rplacd (getf portals tile) pos)
+                             (setf (cdr (getf portals tile)) pos)
                              ;; If it doesn't, create the mapping
                              (setf (getf portals tile) (cons pos nil)))))
                   (setf (aref tile-array (first pos) (second pos)) tile)
@@ -79,7 +79,7 @@
       (error "There must be at least one ghost spawn ('G') on the map!"))
     (loop for (portal-name portal-mapping) on portals by #'cddr
           when (not (cdr portal-mapping))
-            do (error "Incorrect mapping for portal ~a!" portal-name))
+            do (error "Incorrect mapping for ~a!" portal-name))
     (make-instance 'game-map :tiles tile-array
                              :ghost-spawns ghost-spawns
                              :portals portals
