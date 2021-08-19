@@ -36,9 +36,7 @@
 
 (defun portal-p (tile)
   "Returns T if the provided tile is a portal."
-  (trivia:match tile
-    ((or 'portal-A 'portal-B 'portal-C 'portal-D) t)
-    (_ nil)))
+  (eql (member tile '(portal-A portal-B portal-C portal-D)) nil))
 
 (defun make-game-map (input-stream)
   "Create a game-map object from an input stream of map tiles/characters."
