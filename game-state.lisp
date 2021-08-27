@@ -243,10 +243,10 @@
 
 (defmethod initialize-instance :after ((ghost ghost) &rest rest &key index &allow-other-keys)
   (declare (ignore rest))
-  (setf (slot-value ghost 'time-to-respawn) (* *default-respawn-time* index)))
+  (setf (slot-value ghost 'time-to-respawn) (* index *default-respawn-time*)))
 
 (defclass player (game-entity)
-  ((next-direction :initarg 'none
+  ((next-direction :initform 'none
                    :reader player-next-dir
                    :documentation "Direction advice for the player")
    (reported-position :reader player-reported-position
@@ -261,6 +261,7 @@
 
 (defclass game-state ()
   ((map :initarg :map
+        :reader game-map
         :initform (error "no value for slot 'map'"))
    (player :initarg :player
            :initform (error "no value for slot 'player'"))
@@ -275,20 +276,33 @@
    (time-at-pause :initform 0)
    (stage :initform 'init)))
 
-;; testing SDL2
-
 (defparameter *window-width* 800)
 (defparameter *window-height* 600)
 (defparameter *default-map* (with-open-file (input "resources/default.map") (make-game-map input)))
 
+(defmethod game-loop ((game game-state))
+  (sdl2:with-init (:everything)
+    (sdl2:with-window (window :title "puck-man"
+                              :flags '(:input-grabbed :resizable :shown)
+                              :w *window-width* :h *window-height*)
+      (sdl2:with-renderer (renderer window :flags '(:accelerated :targettexture))
+        (sdl2:with-event-loop (:method :poll)
+          (:keyup (:keysym keysym)
+                  (when (sdl2:scancode= (sdl2:scancode-value keysym)
+                                        :scancode-escape)
+                    (sdl2:push-event :quit)))
+          (:idle ()
+                 (draw (game-map game) renderer))
+          (:quit () t))))))
+
 (defun game-main ()
   (let ((game-state (make-instance 'game-state :map *default-map*)))
-      (game-loop game-state)))
+    (game-loop game-state)))
 
 (defun sdl2-test ()
   (sdl2:with-init (:everything)
     (sdl2:with-window (win :title "SDL2 test"
-                           :flags '(:shown)
+                           :flags '(:shown :resizable)
                            :w *window-width*
                            :h *window-height*)
       (sdl2:with-renderer (renderer win :flags '(:accelerated))
