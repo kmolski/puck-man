@@ -1,3 +1,6 @@
+;; (defpackage :pl.kmolski.puck-man (:use :asdf :cl))
+;; (in-package :pl.kmolski.puck-man)
+
 (require :alexandria)
 (require :sdl2)
 (require :str)
@@ -36,7 +39,7 @@
 
 (defun portal-p (tile)
   "Returns T if the provided tile is a portal."
-  (eql (member tile '(portal-A portal-B portal-C portal-D)) nil))
+  (and (member tile '(portal-A portal-B portal-C portal-D)) t))
 
 (defun make-game-map (input-stream)
   "Create a game-map object from an input stream of map tiles/characters."
@@ -47,7 +50,7 @@
          (portals (list))
          (ghost-spawn-gate)
          (player-spawn))
-    (when (= (apply #'* map-dimensions) 0)
+    (when (= 0 (apply #'* map-dimensions))
       (error "The provided map is empty!"))
     (loop for char = (read-char input-stream nil)
           for pos  = (copy-list current-pos)
@@ -182,9 +185,74 @@
                    when (or (eql tile 'dot) (eql tile 'super-dot))
                      do (setf (aref map-tiles x y) 'empty)))))
 
-(defmethod draw ((map game-map))
+(defmethod draw ((map game-map) renderer)
   "Draw the map with the given renderer."
+  ;; TODO: render the map to a texture here!
   ())
+
+;; entity stuff
+
+(defparameter *default-respawn-time* 30)
+
+(defclass game-entity ()
+  ((position :initarg :position
+             :initform (error "no value for slot 'position'")
+             :reader entity-position
+             :documentation "The position (x y) of the entity")
+   (direction :initarg :direction
+              :initform (error "no value for slot 'direction'")
+              :reader entity-direction
+              :documentation "The direction that the entity is facing")
+   (speed :initarg :default-speed
+          :initform (error "no value for slot 'speed'")
+          :reader entity-speed
+          :documentation "The speed of the entity")
+   (game-state :initarg :game-state
+               :initform (error "no value for slot 'game-state'")
+               :reader entity-game
+               :documentation "The game that the entity belongs to"))
+  (:documentation "This class represents a basic game entity"))
+
+(defgeneric can-traverse-tile-p (entity tile)
+  (:documentation "Checks if the entity can enter the map tile"))
+
+(defgeneric check-collision (entity)
+  (:documentation "Checks if there is a collision between the player and ghost"))
+
+(defgeneric move (entity)
+  (:documentation "Move the entity to a new position based on its speed and direction"))
+
+(defmethod draw ((entity game-entity) renderer)
+  "Draw the entity with the given renderer."
+  ())
+
+(defclass ghost (game-entity)
+  ((alive :initform nil
+          :accessor ghost-alive
+          :documentation "T if the ghost is alive")
+   (time-to-respawn :reader ghost-time-to-respawn
+                    :documentation "Ghost respawn time")
+   (tracking-strategy :initarg tracking-strategy
+                      :initform (error "no value for slot 'tracking-strategy'")
+                      :reader ghost-strategy
+                      :documentation "Ghost's tracking strategy")
+   (special-ability :initarg special-ability
+                    :initform (error "no value for slot 'special-ability'")
+                    :reader ghost-ability
+                    :documentation "Ghost's special ability")))
+
+(defmethod initialize-instance :after ((ghost ghost) &rest rest &key index &allow-other-keys)
+  (declare (ignore rest))
+  (setf (slot-value ghost 'time-to-respawn) (* *default-respawn-time* index)))
+
+(defclass player (game-entity)
+  ((next-direction :initarg 'none
+                   :reader player-next-dir
+                   :documentation "Direction advice for the player")
+   (reported-position :reader player-reported-position
+                      :documentation "Player's position (x y) as seen by other entities")
+   (special-ability :initform nil
+                    :documentation "The player's ability")))
 
 ;; game model stuff
 
@@ -207,8 +275,15 @@
    (time-at-pause :initform 0)
    (stage :initform 'init)))
 
+;; testing SDL2
+
 (defparameter *window-width* 800)
 (defparameter *window-height* 600)
+(defparameter *default-map* (with-open-file (input "resources/default.map") (make-game-map input)))
+
+(defun game-main ()
+  (let ((game-state (make-instance 'game-state :map *default-map*)))
+      (game-loop game-state)))
 
 (defun sdl2-test ()
   (sdl2:with-init (:everything)
