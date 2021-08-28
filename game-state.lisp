@@ -109,7 +109,9 @@
                  :reader player-spawn
                  :documentation "Player spawn position (x y)")
    (max-ghosts :reader max-ghosts
-               :documentation "Max amount of ghosts, based on the ghost spawn count")))
+               :documentation "Max amount of ghosts, based on the ghost spawn count")
+   (texture :reader map-texture
+            :documentation "Cached SDL2 texture of the whole map")))
 
 (defmethod initialize-instance :after ((map game-map) &rest rest)
   (declare (ignore rest))
@@ -187,8 +189,24 @@
 
 (defmethod draw ((map game-map) renderer)
   "Draw the map with the given renderer."
-  ;; TODO: render the map to a texture here!
-  ())
+  ;; TODO: render the map to a cached texture here!
+  (let* ((map-dimensions (array-dimensions (map-tiles map)))
+         (map-width  (first map-dimensions))
+         (map-height (second map-dimensions))
+         (tile-edge (round (min (/ *window-width* map-width) (/ *window-height* map-height))))
+         (draw-start (list (floor (- (/ *window-width*  2) (/ (* map-width tile-edge)  2)))
+                           (floor (- (/ *window-height* 2) (/ (* map-height tile-edge) 2))))))
+    (loop for y-index below map-height
+          for y = (+ (second draw-start) (* y-index tile-edge))
+          append (loop for x-index below map-width
+                       for x = (+ (first draw-start) (* x-index tile-edge))
+                       for tile = (tile-at map (list x-index y-index))
+                       for color = (trivia:match tile
+                                     ('wall '(0 0 255 255))
+                                     (_ '(0 0 0 255)))
+                       for rect = (sdl2:make-rect x y tile-edge tile-edge)
+                       do (apply #'sdl2:set-render-draw-color renderer color)
+                          (sdl2:render-fill-rect renderer rect)))))
 
 ;; entity stuff
 
@@ -207,9 +225,7 @@
           :initform (error "no value for slot 'speed'")
           :reader entity-speed
           :documentation "The speed of the entity")
-   (game-state :initarg :game-state
-               :initform (error "no value for slot 'game-state'")
-               :reader entity-game
+   (game-state :reader entity-game
                :documentation "The game that the entity belongs to"))
   (:documentation "This class represents a basic game entity"))
 
@@ -264,10 +280,12 @@
         :reader game-map
         :initform (error "no value for slot 'map'"))
    (player :initarg :player
-           :initform (error "no value for slot 'player'"))
+           ; :initform (error "no value for slot 'player'"))
+           )
    (ghosts :initform (list))
    (window :initarg window
-           :initform (error "no value for slot 'window'"))
+           ; :initform (error "no value for slot 'window'"))
+           )
    (level :initform 0)
    (score :initform 0)
    (dots :initform 0)
@@ -283,7 +301,7 @@
 (defmethod game-loop ((game game-state))
   (sdl2:with-init (:everything)
     (sdl2:with-window (window :title "puck-man"
-                              :flags '(:input-grabbed :resizable :shown)
+                              :flags '(:input-focus :resizable :shown)
                               :w *window-width* :h *window-height*)
       (sdl2:with-renderer (renderer window :flags '(:accelerated :targettexture))
         (sdl2:with-event-loop (:method :poll)
@@ -292,11 +310,13 @@
                                         :scancode-escape)
                     (sdl2:push-event :quit)))
           (:idle ()
-                 (draw (game-map game) renderer))
+                 (draw (game-map game) renderer)
+                 (sdl2:render-present renderer)
+                 (sdl2:delay 33))
           (:quit () t))))))
 
 (defun game-main ()
-  (let ((game-state (make-instance 'game-state :map *default-map*)))
+  (let* ((game-state (make-instance 'game-state :map *default-map*)))
     (game-loop game-state)))
 
 (defun sdl2-test ()
