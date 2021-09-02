@@ -1,6 +1,3 @@
-;; (defpackage :pl.kmolski.puck-man (:use :asdf :cl))
-;; (in-package :pl.kmolski.puck-man)
-
 (require :alexandria)
 (require :sdl2)
 (require :str)
@@ -318,27 +315,3 @@
 (defun game-main ()
   (let* ((game-state (make-instance 'game-state :map *default-map*)))
     (game-loop game-state)))
-
-(defun sdl2-test ()
-  (sdl2:with-init (:everything)
-    (sdl2:with-window (win :title "SDL2 test"
-                           :flags '(:shown :resizable)
-                           :w *window-width*
-                           :h *window-height*)
-      (sdl2:with-renderer (renderer win :flags '(:accelerated))
-        (sdl2:with-event-loop (:method :poll)
-          (:keyup (:keysym keysym)
-                  (when (sdl2:scancode= (sdl2:scancode-value keysym)
-                                        :scancode-escape)
-                    (sdl2:push-event :quit)))
-          (:idle ()
-                 (multiple-value-bind (rects num)
-                     (apply #'sdl2:rects*
-                            (loop for x from 50 to (- *window-width* 50) by 150
-                                  append (loop for y from 50 to (- *window-height* 50) by 150
-                                               collect (sdl2:make-rect x y 100 100))))
-                   (sdl2:set-render-draw-color renderer 255 127 0 255)
-                   (sdl2:render-fill-rects renderer rects num))
-                 (sdl2:render-present renderer)
-                 (sdl2:delay 33))
-          (:quit () t))))))
