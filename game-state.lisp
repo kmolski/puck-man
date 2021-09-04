@@ -5,6 +5,9 @@
 
 (setf *random-state* (make-random-state t))
 
+(defparameter *window-width* 800)
+(defparameter *window-height* 600)
+
 ;; map stuff
 
 (defparameter *max-superdots* 5)
@@ -42,7 +45,7 @@
   "Create a game-map object from an input stream of map tiles/characters."
   (let* ((map-dimensions (get-map-dimensions input-stream))
          (tile-array (make-array map-dimensions :initial-element 'inaccessible))
-         (current-pos (list 0 0))
+         (current-pos (cons 0 0))
          (ghost-spawns (list))
          (portals (list))
          (ghost-spawn-gate)
@@ -64,11 +67,11 @@
                              (setf (cdr (getf portals tile)) pos)
                              ;; If it doesn't, create the mapping
                              (setf (getf portals tile) (cons pos nil)))))
-                  (setf (aref tile-array (first pos) (second pos)) tile)
-                  (incf (first current-pos)))
+                  (setf (aref tile-array (car pos) (cdr pos)) tile)
+                  (incf (car current-pos)))
           else ; Next tile row, start from x=0
-             do (setf (first current-pos) 0)
-                (incf (second current-pos)))
+             do (setf (car current-pos) 0)
+                (incf (cdr current-pos)))
     (when (not player-spawn)
       (error "There must be a player spawn ('P') on the map!"))
     (when (not ghost-spawn-gate)
@@ -92,19 +95,19 @@
    (ghost-spawns :initarg :ghost-spawns
                  :initform (error "no value for slot 'ghost-spawns'")
                  :reader ghost-spawns
-                 :documentation "List of ghost spawn positions (x y)")
+                 :documentation "List of ghost spawn positions (x . y)")
    (portals :initarg :portals
             :initform (error "no value for slot 'portals'")
             :reader map-portals
-            :documentation "Plist of (portal-name ((x1 y1) . (x2 y2)) ...)")
+            :documentation "Plist of (portal-name ((x1 . y1) . (x2 . y2)) ...)")
    (ghost-spawn-gate :initarg :ghost-spawn-gate
                      :initform (error "no value for slot 'ghost-spawn-gate'")
                      :reader ghost-spawn-gate
-                     :documentation "Ghost spawn gate position (x y)")
+                     :documentation "Ghost spawn gate position (x . y)")
    (player-spawn :initarg :player-spawn
                  :initform (error "no value for slot 'player-spawn'")
                  :reader player-spawn
-                 :documentation "Player spawn position (x y)")
+                 :documentation "Player spawn position (x . y)")
    (max-ghosts :reader max-ghosts
                :documentation "Max amount of ghosts, based on the ghost spawn count")
    (texture :reader map-texture
@@ -115,19 +118,19 @@
   (setf (slot-value map 'max-ghosts) (length (ghost-spawns map))))
 
 (defun get-next-tile-pos (position direction)
-  "Get the position (x y) of the next tile in the given direction,
-   starting from the given position (x y)."
-  (destructuring-bind (x y) position
+  "Get the position (x . y) of the next tile in the given direction,
+   starting from the given position (x . y)."
+  (destructuring-bind (x . y) position
     (trivia:match direction
-      ('up    (list x (1- y)))
-      ('left  (list (1- x) y))
-      ('down  (list x (1+ y)))
-      ('right (list (1+ x) y))
+      ('up    (cons x (1- y)))
+      ('left  (cons (1- x) y))
+      ('down  (cons x (1+ y)))
+      ('right (cons (1+ x) y))
       (_      (error "invalid direction")))))
 
 (defmethod tile-at ((map game-map) position)
-  "Get the tile at position (x y)."
-  (destructuring-bind (x y) position
+  "Get the tile at position (x . y)."
+  (destructuring-bind (x . y) position
     (aref (map-tiles map) x y)))
 
 (defmethod get-other-portal-pos ((map game-map) position)
@@ -141,8 +144,8 @@
 (defmethod next-tile-exists-p ((map game-map) position direction)
   "Return T if the next tile in the given direction exists."
   (let ((tile-array-dims (array-dimensions (map-tiles map)))
-        (pos-x (first position))
-        (pos-y (second position)))
+        (pos-x (car position))
+        (pos-y (cdr position)))
     (trivia:match direction
       ('up    (> (floor pos-y) 0))
       ('left  (> (floor pos-x) 0))
@@ -191,35 +194,35 @@
          (map-width  (first map-dimensions))
          (map-height (second map-dimensions))
          (tile-edge (round (min (/ *window-width* map-width) (/ *window-height* map-height))))
-         (draw-start (list (floor (- (/ *window-width*  2) (/ (* map-width tile-edge)  2)))
+         (draw-start (cons (floor (- (/ *window-width*  2) (/ (* map-width tile-edge)  2)))
                            (floor (- (/ *window-height* 2) (/ (* map-height tile-edge) 2))))))
     (loop for y-index below map-height
-          for y = (+ (second draw-start) (* y-index tile-edge))
+          for y = (+ (cdr draw-start) (* y-index tile-edge))
           append (loop for x-index below map-width
-                       for x = (+ (first draw-start) (* x-index tile-edge))
-                       for tile = (tile-at map (list x-index y-index))
+                       for x = (+ (car draw-start) (* x-index tile-edge))
+                       for tile = (tile-at map (cons x-index y-index))
                        for color = (trivia:match tile
                                      ('wall '(0 0 255 255))
-                                     (_ '(0 0 0 255)))
+                                     (_ '(0 0 0 0)))
                        for rect = (sdl2:make-rect x y tile-edge tile-edge)
                        do (apply #'sdl2:set-render-draw-color renderer color)
                           (sdl2:render-fill-rect renderer rect)))))
 
 ;; entity stuff
 
+(defparameter *base-speed* 1)
 (defparameter *default-respawn-time* 30)
 
 (defclass game-entity ()
   ((position :initarg :position
              :initform (error "no value for slot 'position'")
              :reader entity-position
-             :documentation "The position (x y) of the entity")
+             :documentation "The position (x . y) of the entity")
    (direction :initarg :direction
               :initform (error "no value for slot 'direction'")
               :reader entity-direction
               :documentation "The direction that the entity is facing")
-   (speed :initarg :default-speed
-          :initform (error "no value for slot 'speed'")
+   (speed :initform *base-speed*
           :reader entity-speed
           :documentation "The speed of the entity")
    (game-state :reader entity-game
@@ -235,9 +238,8 @@
 (defgeneric move (entity)
   (:documentation "Move the entity to a new position based on its speed and direction"))
 
-(defmethod draw ((entity game-entity) renderer)
-  "Draw the entity with the given renderer."
-  ())
+(defgeneric draw (entity renderer)
+  (:documentation "Draw the entity with the given renderer."))
 
 (defclass ghost (game-entity)
   ((alive :initform nil
@@ -258,14 +260,46 @@
   (declare (ignore rest))
   (setf (slot-value ghost 'time-to-respawn) (* index *default-respawn-time*)))
 
+(defmethod draw ((ghost ghost) renderer)
+  "Draw the player with the given renderer."
+  (let* ((map (game-map (entity-game ghost)))
+         (map-dimensions (array-dimensions (map-tiles map)))
+         (map-width  (first map-dimensions))
+         (map-height (second map-dimensions))
+         (tile-edge (round (min (/ *window-width* map-width) (/ *window-height* map-height))))
+         (draw-start (cons (floor (- (/ *window-width*  2) (/ (* map-width tile-edge)  2)))
+                           (floor (- (/ *window-height* 2) (/ (* map-height tile-edge) 2)))))
+         (rect (sdl2:make-rect (+ (car draw-start) (* (car (entity-position player)) tile-edge))
+                               (+ (cdr draw-start) (* (cdr (entity-position player)) tile-edge))
+                               tile-edge tile-edge))
+         (color (trivia:match ghost-strategy
+                  (_ '(192 0 255 255)))))
+    (apply #'sdl2:set-render-draw-color renderer color)
+    (sdl2:render-fill-rect renderer rect)))
+
 (defclass player (game-entity)
   ((next-direction :initform 'none
                    :reader player-next-dir
                    :documentation "Direction advice for the player")
    (reported-position :reader player-reported-position
-                      :documentation "Player's position (x y) as seen by other entities")
+                      :documentation "Player's position (x . y) as seen by other entities")
    (special-ability :initform nil
                     :documentation "The player's ability")))
+
+(defmethod draw ((player player) renderer)
+  "Draw the player with the given renderer."
+  (let* ((map (game-map (entity-game player)))
+         (map-dimensions (array-dimensions (map-tiles map)))
+         (map-width  (first map-dimensions))
+         (map-height (second map-dimensions))
+         (tile-edge (round (min (/ *window-width* map-width) (/ *window-height* map-height))))
+         (draw-start (cons (floor (- (/ *window-width*  2) (/ (* map-width tile-edge)  2)))
+                           (floor (- (/ *window-height* 2) (/ (* map-height tile-edge) 2)))))
+         (rect (sdl2:make-rect (+ (car draw-start) (* (car (entity-position player)) tile-edge))
+                               (+ (cdr draw-start) (* (cdr (entity-position player)) tile-edge))
+                               tile-edge tile-edge)))
+    (sdl2:set-render-draw-color renderer 255 144 0 255)
+    (sdl2:render-fill-rect renderer rect)))
 
 ;; game model stuff
 
@@ -277,8 +311,8 @@
         :reader game-map
         :initform (error "no value for slot 'map'"))
    (player :initarg :player
-           ; :initform (error "no value for slot 'player'"))
-           )
+           :reader game-player
+           :initform (error "no value for slot 'player'"))
    (ghosts :initform (list))
    (window :initarg window
            ; :initform (error "no value for slot 'window'"))
@@ -291,9 +325,9 @@
    (time-at-pause :initform 0)
    (stage :initform 'init)))
 
-(defparameter *window-width* 800)
-(defparameter *window-height* 600)
-(defparameter *default-map* (with-open-file (input "resources/default.map") (make-game-map input)))
+(defmethod initialize-instance :after ((game game-state) &rest rest)
+  (declare (ignore rest))
+  (setf (slot-value (game-player game) 'game-state) game))
 
 (defmethod game-loop ((game game-state))
   (sdl2:with-init (:everything)
@@ -307,11 +341,15 @@
                                         :scancode-escape)
                     (sdl2:push-event :quit)))
           (:idle ()
-                 (draw (game-map game) renderer)
+                 (draw (game-map game)    renderer)
+                 (draw (game-player game) renderer)
                  (sdl2:render-present renderer)
                  (sdl2:delay 33))
           (:quit () t))))))
 
+(defparameter *game-map* (with-open-file (input "resources/default.map") (make-game-map input)))
+
 (defun game-main ()
-  (let* ((game-state (make-instance 'game-state :map *default-map*)))
+  (let* ((player     (make-instance 'player :direction 'none :position (player-spawn *game-map*)))
+         (game-state (make-instance 'game-state :map *game-map* :player player)))
     (game-loop game-state)))
