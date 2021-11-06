@@ -240,7 +240,9 @@
   (:documentation "Draw the entity with the given renderer."))
 
 (defclass ghost (game-entity)
-  ((alive :initform nil
+  ((direction :initform 'left
+              :documentation "The direction that the ghost is facing")
+   (alive :initform nil
           :accessor ghost-alive
           :documentation "T if the ghost is alive")
    (time-to-respawn :reader ghost-time-to-respawn
@@ -259,16 +261,17 @@
   (setf (slot-value ghost 'time-to-respawn) (* index *default-respawn-time*)))
 
 (defmethod draw ((ghost ghost) renderer)
-  "Draw the player with the given renderer."
-  (let* ((map (game-map (entity-game ghost)))
+  "Draw the ghost with the given renderer."
+  (let* ((ghost-strategy (ghost-strategy ghost))
+         (map (game-map (entity-game ghost)))
          (map-dimensions (array-dimensions (map-tiles map)))
          (map-width  (first map-dimensions))
          (map-height (second map-dimensions))
          (tile-edge (round (min (/ *window-width* map-width) (/ *window-height* map-height))))
          (draw-start (cons (floor (- (/ *window-width*  2) (/ (* map-width tile-edge)  2)))
                            (floor (- (/ *window-height* 2) (/ (* map-height tile-edge) 2)))))
-         (rect (sdl2:make-rect (+ (car draw-start) (* (car (entity-position player)) tile-edge))
-                               (+ (cdr draw-start) (* (cdr (entity-position player)) tile-edge))
+         (rect (sdl2:make-rect (+ (car draw-start) (* (car (entity-position ghost)) tile-edge))
+                               (+ (cdr draw-start) (* (cdr (entity-position ghost)) tile-edge))
                                tile-edge tile-edge))
          (color (trivia:match ghost-strategy
                   (_ '(192 0 255 255)))))
@@ -276,11 +279,14 @@
     (sdl2:render-fill-rect renderer rect)))
 
 (defclass player (game-entity)
-  ((next-direction :initform 'none
+  ((position :documentation "Apparent position (x . y) of the player")
+   (direction :initform 'none
+              :documentation "The direction that the player is facing")
+   (next-direction :initform 'none
                    :reader player-next-dir
                    :documentation "Direction advice for the player")
-   (reported-position :reader player-reported-position
-                      :documentation "Player's position (x . y) as seen by other entities")
+   (actual-position :reader player-actual-position
+                      :documentation "Player's actual position (x . y)")
    (special-ability :initform nil
                     :documentation "The player's ability")))
 
@@ -344,14 +350,15 @@
 (defmethod generate-ghosts ((game game-state))
   (with-slots (ghosts level map max-ghosts) game
     (setf ghosts (list))
-    (with-slots (ghost-spawn-gate ghost-spawns spawn-gate) map
-      (push (make-instance 'ghost :position spawn-gate
+    (with-slots (ghost-spawn-gate ghost-spawns) map
+      (push (make-instance 'ghost :index 0 :position ghost-spawn-gate
                                   :tracking-strategy #'track-follow)
             ghosts)
       (loop with ghosts-with-abilities = (min level (- max-ghosts 1))
+            for i from 0
             for spawn-place in ghost-spawns
             for strategy = (get-random-strategy)
-            for new-ghost = (make-instance 'ghost :position spawn-place
+            for new-ghost = (make-instance 'ghost :index i :position spawn-place
                                                   :tracking-strategy strategy)
             when (> ghosts-with-abilities 0)
               do (setf (slot-value new-ghost 'special-ability)
@@ -366,6 +373,8 @@
     (setf dots (fill-with-dots map))
     (setf lives *default-lives*)))
 (defmethod game-loop ((game game-state))
+  (reset-game game)
+
   (sdl2:with-init (:everything)
     (sdl2:with-window (window :title "puck-man"
                               :flags '(:input-focus :resizable :shown)
