@@ -25,17 +25,17 @@
 
 (defun char->tile (character)
   "Convert a character to a map tile."
-  (trivia:match character
-    ((or #\- #\|) 'wall)
-    (#\A          'portal-A)
-    (#\B          'portal-B)
-    (#\C          'portal-C)
-    (#\D          'portal-D)
-    (#\.          'inaccessible)
-    (#\#          'spawn-gate)
-    (#\G          'ghost-spawn)
-    (#\P          'player-spawn)
-    (_            'empty)))
+  (case character
+    ((#\- #\|) 'wall)
+    (#\A       'portal-A)
+    (#\B       'portal-B)
+    (#\C       'portal-C)
+    (#\D       'portal-D)
+    (#\.       'inaccessible)
+    (#\#       'spawn-gate)
+    (#\G       'ghost-spawn)
+    (#\P       'player-spawn)
+    (otherwise 'empty)))
 
 (defun portal-p (tile)
   "Returns T if the provided tile is a portal."
@@ -57,11 +57,11 @@
           while char
           if (char/= char #\Newline) ; Proper map tile
              do (let ((tile (char->tile char)))
-                  (trivia:match tile
-                    ('spawn-gate   (setf ghost-spawn-gate pos))
-                    ('ghost-spawn  (push pos ghost-spawns))
-                    ('player-spawn (setf player-spawn pos))
-                    ((or 'portal-A 'portal-B 'portal-C 'portal-D)
+                  (case tile
+                    (spawn-gate   (setf ghost-spawn-gate pos))
+                    (ghost-spawn  (push pos ghost-spawns))
+                    (player-spawn (setf player-spawn pos))
+                    ((portal-A portal-B portal-C portal-D)
                          (if (getf portals tile) ; If a record for the portal exists
                              ;; Set the other end of the mapping
                              (setf (cdr (getf portals tile)) pos)
@@ -121,12 +121,11 @@
   "Get the position (x . y) of the next tile in the given direction,
    starting from the given position (x . y)."
   (destructuring-bind (x . y) position
-    (trivia:match direction
-      ('up    (cons x (1- y)))
-      ('left  (cons (1- x) y))
-      ('down  (cons x (1+ y)))
-      ('right (cons (1+ x) y))
-      (_      (error "invalid direction")))))
+    (ecase direction
+      (up    (cons x (1- y)))
+      (left  (cons (1- x) y))
+      (down  (cons x (1+ y)))
+      (right (cons (1+ x) y)))))
 
 (defmethod tile-at ((map game-map) position)
   "Get the tile at position (x . y)."
@@ -146,12 +145,11 @@
   (let ((tile-array-dims (array-dimensions (map-tiles map)))
         (pos-x (car position))
         (pos-y (cdr position)))
-    (trivia:match direction
-      ('up    (> (floor pos-y) 0))
-      ('left  (> (floor pos-x) 0))
-      ('down  (< (ceiling pos-y) (1- (second tile-array-dims))))
-      ('right (< (ceiling pos-x) (1- (first tile-array-dims))))
-      (_      (error "invalid direction")))))
+    (ecase direction
+      (up    (> (floor pos-y) 0))
+      (left  (> (floor pos-x) 0))
+      (down  (< (ceiling pos-y) (1- (second tile-array-dims))))
+      (right (< (ceiling pos-x) (1- (first tile-array-dims)))))))
 
 (defmethod fill-with-dots ((map game-map))
   "Fill the map with regular and super dots."
@@ -201,9 +199,9 @@
           append (loop for x-index below map-width
                        for x = (+ (car draw-start) (* x-index tile-edge))
                        for tile = (tile-at map (cons x-index y-index))
-                       for color = (trivia:match tile
-                                     ('wall '(0 0 255 255))
-                                     (_ '(0 0 0 0)))
+                       for color = (case tile
+                                     (wall      '(0 0 255 255))
+                                     (otherwise '(0 0 0 0)))
                        for rect = (sdl2:make-rect x y tile-edge tile-edge)
                        do (apply #'sdl2:set-render-draw-color renderer color)
                           (sdl2:render-fill-rect renderer rect)))))
@@ -252,7 +250,7 @@
                       :reader ghost-strategy
                       :documentation "Ghost's tracking strategy")
    (special-ability :initarg special-ability
-                    :initform (error "no value for slot 'special-ability'")
+                    :initform nil
                     :reader ghost-ability
                     :documentation "Ghost's special ability")))
 
@@ -328,7 +326,45 @@
 (defmethod initialize-instance :after ((game game-state) &rest rest)
   (declare (ignore rest))
   (setf (slot-value (game-player game) 'game-state) game))
+(defun get-random-strategy ()
+  (ecase (random 4)
+    (0 #'track-follow)
+    (1 #'track-ambush)
+    (2 #'track-patrol)
+    (3 #'track-random)))
 
+(defun track-follow () ())
+(defun track-ambush () ())
+(defun track-patrol () ())
+(defun track-random () ())
+
+(defun get-random-ghost-ability ()
+  ())
+
+(defmethod generate-ghosts ((game game-state))
+  (with-slots (ghosts level map max-ghosts) game
+    (setf ghosts (list))
+    (with-slots (ghost-spawn-gate ghost-spawns spawn-gate) map
+      (push (make-instance 'ghost :position spawn-gate
+                                  :tracking-strategy #'track-follow)
+            ghosts)
+      (loop with ghosts-with-abilities = (min level (- max-ghosts 1))
+            for spawn-place in ghost-spawns
+            for strategy = (get-random-strategy)
+            for new-ghost = (make-instance 'ghost :position spawn-place
+                                                  :tracking-strategy strategy)
+            when (> ghosts-with-abilities 0)
+              do (setf (slot-value new-ghost 'special-ability)
+                       (get-random-ghost-ability))
+                 (decf ghosts-with-abilities)
+            do (push new-ghost ghosts)))))
+
+(defmethod reset-game ((game game-state))
+  (with-slots (map level score dots lives) game
+    (setf level 1)
+    (setf score 0)
+    (setf dots (fill-with-dots map))
+    (setf lives *default-lives*)))
 (defmethod game-loop ((game game-state))
   (sdl2:with-init (:everything)
     (sdl2:with-window (window :title "puck-man"
