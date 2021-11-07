@@ -223,7 +223,8 @@
    (speed :initform *base-speed*
           :reader entity-speed
           :documentation "The speed of the entity")
-   (game-state :reader entity-game
+   (game-state :initarg :game-state
+               :reader entity-game
                :documentation "The game that the entity belongs to"))
   (:documentation "This class represents a basic game entity"))
 
@@ -247,12 +248,11 @@
           :documentation "T if the ghost is alive")
    (time-to-respawn :reader ghost-time-to-respawn
                     :documentation "Ghost respawn time")
-   (tracking-strategy :initarg tracking-strategy
+   (tracking-strategy :initarg :tracking-strategy
                       :initform (error "no value for slot 'tracking-strategy'")
                       :reader ghost-strategy
                       :documentation "Ghost's tracking strategy")
-   (special-ability :initarg special-ability
-                    :initform nil
+   (special-ability :initform nil
                     :reader ghost-ability
                     :documentation "Ghost's special ability")))
 
@@ -348,18 +348,17 @@
   ())
 
 (defmethod generate-ghosts ((game game-state))
-  (with-slots (ghosts level map max-ghosts) game
+  (with-slots (ghosts level map) game
     (setf ghosts (list))
-    (with-slots (ghost-spawn-gate ghost-spawns) map
+    (with-slots (ghost-spawn-gate ghost-spawns max-ghosts) map
       (push (make-instance 'ghost :index 0 :position ghost-spawn-gate
-                                  :tracking-strategy #'track-follow)
+                                  :game-state game :tracking-strategy #'track-follow)
             ghosts)
       (loop with ghosts-with-abilities = (min level (- max-ghosts 1))
             for i from 0
             for spawn-place in ghost-spawns
-            for strategy = (get-random-strategy)
             for new-ghost = (make-instance 'ghost :index i :position spawn-place
-                                                  :tracking-strategy strategy)
+                                                  :game-state game :tracking-strategy (get-random-strategy))
             when (> ghosts-with-abilities 0)
               do (setf (slot-value new-ghost 'special-ability)
                        (get-random-ghost-ability))
@@ -385,16 +384,26 @@
                   (when (sdl2:scancode= (sdl2:scancode-value keysym)
                                         :scancode-escape)
                     (sdl2:push-event :quit)))
+          (:windowevent (:event event :data1 data1 :data2 data2)
+                        (when (= event sdl2-ffi:+sdl-windowevent-resized+) ;; Window resized
+                          (format t "W: ~A, H: ~A" data1 data2)
+                          (setf *window-width*  data1)
+                          (setf *window-height* data2)))
           (:idle ()
                  (draw (game-map game)    renderer)
                  (draw (game-player game) renderer)
+                 (loop with ghosts = (slot-value game 'ghosts)
+                       for g in ghosts
+                       do (draw g renderer))
                  (sdl2:render-present renderer)
                  (sdl2:delay 33))
           (:quit () t))))))
 
-(defparameter *game-map* (with-open-file (input "resources/default.map") (make-game-map input)))
+(defparameter *default-map* (with-open-file (input "resources/default.map") (make-game-map input)))
 
 (defun game-main ()
-  (let* ((player     (make-instance 'player :direction 'none :position (player-spawn *game-map*)))
-         (game-state (make-instance 'game-state :map *game-map* :player player)))
+  (let* ((player (make-instance 'player :position (player-spawn *default-map*)))
+         (game-state (make-instance 'game-state
+                                    :map *default-map*
+                                    :player player)))
     (game-loop game-state)))
