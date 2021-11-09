@@ -331,7 +331,8 @@
 
 (defmethod initialize-instance :after ((game game-state) &rest rest)
   (declare (ignore rest))
-  (setf (slot-value (game-player game) 'game-state) game))
+  (with-slots (game-state) (game-player game)
+    (setf game-state game)))
 (defun get-random-strategy ()
   (ecase (random 4)
     (0 #'track-follow)
@@ -355,7 +356,7 @@
                                   :game-state game :tracking-strategy #'track-follow)
             ghosts)
       (loop with ghosts-with-abilities = (min level (- max-ghosts 1))
-            for i from 0
+            for i from 1
             for spawn-place in ghost-spawns
             for new-ghost = (make-instance 'ghost :index i :position spawn-place
                                                   :game-state game :tracking-strategy (get-random-strategy))
@@ -370,7 +371,8 @@
     (setf level 1)
     (setf score 0)
     (setf dots (fill-with-dots map))
-    (setf lives *default-lives*)))
+    (setf lives *default-lives*)
+    (generate-ghosts game)))
 (defmethod game-loop ((game game-state))
   (reset-game game)
 
@@ -386,10 +388,11 @@
                     (sdl2:push-event :quit)))
           (:windowevent (:event event :data1 data1 :data2 data2)
                         (when (= event sdl2-ffi:+sdl-windowevent-resized+) ;; Window resized
-                          (format t "W: ~A, H: ~A" data1 data2)
                           (setf *window-width*  data1)
                           (setf *window-height* data2)))
           (:idle ()
+                 (sdl2:set-render-draw-color renderer 0 0 0 255)
+                 (sdl2:render-clear renderer)
                  (draw (game-map game)    renderer)
                  (draw (game-player game) renderer)
                  (loop with ghosts = (slot-value game 'ghosts)
