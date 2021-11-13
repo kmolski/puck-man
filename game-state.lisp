@@ -5,8 +5,24 @@
 
 (setf *random-state* (make-random-state t))
 
-(defparameter *window-width* 800)
-(defparameter *window-height* 600)
+;; window stuff
+
+(defconstant +default-window-width+ 800)
+(defconstant +default-window-height+ 600)
+
+(defun get-tile-edge (window-width window-height map)
+  (let* ((map-dimensions (array-dimensions (map-tiles map)))
+         (map-width  (first map-dimensions))
+         (map-height (second map-dimensions)))
+    (round (min (/ window-width map-width)
+                (/ window-height map-height)))))
+
+(defun get-draw-start (window-width window-height map)
+  (let* ((map-dimensions (array-dimensions (map-tiles map)))
+         (map-width  (first map-dimensions))
+         (map-height (second map-dimensions)))
+    (cons (floor (- (/ window-width  2) (/ (* map-width *tile-edge*)  2)))
+          (floor (- (/ window-height 2) (/ (* map-height *tile-edge*) 2))))))
 
 ;; entity stuff
 
@@ -65,18 +81,15 @@
 (defmethod draw ((ghost ghost) renderer)
   "Draw the ghost with the given renderer."
   (let* ((ghost-strategy (ghost-strategy ghost))
-         (map (game-map (entity-game ghost)))
-         (map-dimensions (array-dimensions (map-tiles map)))
-         (map-width  (first map-dimensions))
-         (map-height (second map-dimensions))
-         (tile-edge (round (min (/ *window-width* map-width) (/ *window-height* map-height))))
-         (draw-start (cons (floor (- (/ *window-width*  2) (/ (* map-width tile-edge)  2)))
-                           (floor (- (/ *window-height* 2) (/ (* map-height tile-edge) 2)))))
-         (rect (sdl2:make-rect (+ (car draw-start) (* (car (entity-position ghost)) tile-edge))
-                               (+ (cdr draw-start) (* (cdr (entity-position ghost)) tile-edge))
-                               tile-edge tile-edge))
-         (color (trivia:match ghost-strategy
-                  (_ '(192 0 255 255)))))
+         (rect (sdl2:make-rect (+ (car *draw-start*) (* (car (entity-position ghost)) *tile-edge*))
+                               (+ (cdr *draw-start*) (* (cdr (entity-position ghost)) *tile-edge*))
+                               *tile-edge* *tile-edge*))
+         (color (cond
+                  ((eq ghost-strategy #'track-follow) '(192 0 255 255))
+                  ((eq ghost-strategy #'track-patrol) '(0 192 255 255))
+                  ((eq ghost-strategy #'track-ambush) '(192 192 0 255))
+                  ((eq ghost-strategy #'track-random) '(0 255 0 255))
+                  (t '(255 255 255 255)))))
     (apply #'sdl2:set-render-draw-color renderer color)
     (sdl2:render-fill-rect renderer rect)))
 
@@ -94,16 +107,9 @@
 
 (defmethod draw ((player player) renderer)
   "Draw the player with the given renderer."
-  (let* ((map (game-map (entity-game player)))
-         (map-dimensions (array-dimensions (map-tiles map)))
-         (map-width  (first map-dimensions))
-         (map-height (second map-dimensions))
-         (tile-edge (round (min (/ *window-width* map-width) (/ *window-height* map-height))))
-         (draw-start (cons (floor (- (/ *window-width*  2) (/ (* map-width tile-edge)  2)))
-                           (floor (- (/ *window-height* 2) (/ (* map-height tile-edge) 2)))))
-         (rect (sdl2:make-rect (+ (car draw-start) (* (car (entity-position player)) tile-edge))
-                               (+ (cdr draw-start) (* (cdr (entity-position player)) tile-edge))
-                               tile-edge tile-edge)))
+  (let ((rect (sdl2:make-rect (+ (car *draw-start*) (* (car (entity-position player)) *tile-edge*))
+                              (+ (cdr *draw-start*) (* (cdr (entity-position player)) *tile-edge*))
+                              *tile-edge* *tile-edge*)))
     (sdl2:set-render-draw-color renderer 255 144 0 255)
     (sdl2:render-fill-rect renderer rect)))
 
@@ -119,7 +125,7 @@
    (player :initarg :player
            :reader game-player
            :initform (error "no value for slot 'player'"))
-   (ghosts :initform (list))
+   (ghosts :reader game-ghosts)
    (window :initarg window
            ; :initform (error "no value for slot 'window'"))
            )
@@ -173,38 +179,60 @@
     (setf level 1)
     (setf score 0)
     (setf dots (fill-with-dots map))
-    (setf lives *default-lives*)
-    (generate-ghosts game)))
-(defmethod game-loop ((game game-state))
-  (reset-game game)
+    (setf lives *default-lives*)))
 
-  (sdl2:with-init (:everything)
-    (sdl2:with-window (window :title "puck-man"
-                              :flags '(:input-focus :resizable :shown)
-                              :w *window-width* :h *window-height*)
-      (sdl2:with-renderer (renderer window :flags '(:accelerated :targettexture))
-        (sdl2:with-event-loop (:method :poll)
-          (:keyup (:keysym keysym)
-                  (when (sdl2:scancode= (sdl2:scancode-value keysym)
-                                        :scancode-escape)
-                    (sdl2:push-event :quit)))
-          (:windowevent (:event event :data1 data1 :data2 data2)
-                        (when (= event sdl2-ffi:+sdl-windowevent-resized+) ;; Window resized
-                          (setf *window-width*  data1)
-                          (setf *window-height* data2)))
-          (:idle ()
-                 (sdl2:set-render-draw-color renderer 0 0 0 255)
-                 (sdl2:render-clear renderer)
-                 (draw (game-map game)    renderer)
-                 (draw (game-player game) renderer)
-                 (loop with ghosts = (slot-value game 'ghosts)
-                       for g in ghosts
-                       do (draw g renderer))
-                 (sdl2:render-present renderer)
-                 (sdl2:delay 33))
-          (:quit () t))))))
+(defmethod init-game ((game game-state))
+  (with-slots (player ghosts stage map) game
+    ;; Reset player state
+    (with-slots (position actual-position special-ability) player
+      (setf position (player-spawn map))
+      (setf actual-position (player-spawn map))
+      (setf special-ability nil))
+    (generate-ghosts game)
+    (setf stage 'start)))
+(defmethod game-loop ((game game-state))
+  (with-slots (stage) game
+    (reset-game game)
+    (sdl2:with-init (:everything)
+      (sdl2:with-window (window :title "puck-man"
+                                :flags '(:input-focus :resizable :shown)
+                                :w +default-window-width+ :h +default-window-height+)
+        (sdl2:with-renderer (renderer window :flags '(:accelerated :targettexture))
+          (sdl2:with-event-loop (:method :poll)
+            (:windowevent (:event event :data1 width :data2 height)
+                          (when (= event sdl2-ffi:+sdl-windowevent-resized+) ;; Window resized
+                            (setf *tile-edge* (get-tile-edge width height (game-map game)))
+                            (setf *draw-start* (get-draw-start width height (game-map game)))))
+            (:keyup (:keysym keysym)
+                    (let ((keycode (sdl2:scancode-value keysym)))
+                      (when (sdl2:scancode= keycode :scancode-escape)
+                        (sdl2:push-event :quit))
+                      (case stage
+                        (start ())
+                        (countdown ())
+                        (playing ())
+                        (paused ())
+                        (defeat ()))))
+            (:idle ()
+                   (sdl2:set-render-draw-color renderer 0 0 0 255)
+                   (sdl2:render-clear renderer)
+                   (draw (game-map game) renderer)
+
+                   (ecase stage
+                     (init (init-game game))
+                     (start (start-game game renderer))
+                     (countdown )
+                     (playing )
+                     (paused )
+                     (defeat))
+
+                   (sdl2:render-present renderer)
+                   (sdl2:delay 33))
+            (:quit () t)))))))
 
 (defparameter *default-map* (with-open-file (input "resources/default.map") (make-game-map input)))
+(defparameter *tile-edge* (get-tile-edge +default-window-width+ +default-window-height+ *default-map*))
+(defparameter *draw-start* (get-draw-start +default-window-width+ +default-window-height+ *default-map*))
 
 (defun game-main ()
   (let* ((player (make-instance 'player :position (player-spawn *default-map*)))

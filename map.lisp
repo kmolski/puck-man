@@ -181,18 +181,15 @@
   ;; TODO: extract get-map-dimensions
   (let* ((map-dimensions (array-dimensions (map-tiles map)))
          (map-width  (first map-dimensions))
-         (map-height (second map-dimensions))
-         (tile-edge (round (min (/ *window-width* map-width) (/ *window-height* map-height))))
-         (draw-start (cons (floor (- (/ *window-width*  2) (/ (* map-width tile-edge)  2)))
-                           (floor (- (/ *window-height* 2) (/ (* map-height tile-edge) 2))))))
+         (map-height (second map-dimensions)))
     (loop for y-index below map-height
-          for y = (+ (cdr draw-start) (* y-index tile-edge))
-          append (loop for x-index below map-width
-                       for x = (+ (car draw-start) (* x-index tile-edge))
-                       for tile = (tile-at map (cons x-index y-index))
-                       for color = (case tile
-                                     (wall      '(0 0 255 255))
-                                     (otherwise '(0 0 0 0)))
-                       for rect = (sdl2:make-rect x y tile-edge tile-edge)
-                       do (apply #'sdl2:set-render-draw-color renderer color)
-                          (sdl2:render-fill-rect renderer rect)))))
+          for y = (+ (cdr *draw-start*) (* y-index *tile-edge*))
+          do (loop for x-index below map-width
+                   for x = (+ (car *draw-start*) (* x-index *tile-edge*))
+                   for tile = (tile-at map (cons x-index y-index))
+                   for color = (case tile
+                                 (wall      '(0 0 255 255))
+                                 (otherwise '(0 0 0 0)))
+                   for rect = (sdl2:make-rect x y *tile-edge* *tile-edge*)
+                   do (apply #'sdl2:set-render-draw-color renderer color)
+                      (sdl2:render-fill-rect renderer rect)))))
