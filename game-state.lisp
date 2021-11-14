@@ -5,25 +5,6 @@
 
 (setf *random-state* (make-random-state t))
 
-;; window stuff
-
-(defconstant +default-window-width+ 800)
-(defconstant +default-window-height+ 600)
-
-(defun get-tile-edge (window-width window-height map)
-  (let* ((map-dimensions (array-dimensions (map-tiles map)))
-         (map-width  (first map-dimensions))
-         (map-height (second map-dimensions)))
-    (round (min (/ window-width map-width)
-                (/ window-height map-height)))))
-
-(defun get-draw-start (window-width window-height map)
-  (let* ((map-dimensions (array-dimensions (map-tiles map)))
-         (map-width  (first map-dimensions))
-         (map-height (second map-dimensions)))
-    (cons (floor (- (/ window-width  2) (/ (* map-width *tile-edge*)  2)))
-          (floor (- (/ window-height 2) (/ (* map-height *tile-edge*) 2))))))
-
 ;; entity stuff
 
 (defparameter *base-speed* 1)
@@ -141,6 +122,7 @@
   (declare (ignore rest))
   (with-slots (game-state) (game-player game)
     (setf game-state game)))
+
 (defun get-random-strategy ()
   (ecase (random 4)
     (0 #'track-follow)
@@ -190,9 +172,17 @@
       (setf special-ability nil))
     (generate-ghosts game)
     (setf stage 'start)))
+
+(defmethod draw-entities ((game game-state) renderer)
+  (draw (game-player game) renderer)
+  (loop for g in (game-ghosts game)
+        do (draw g renderer)))
+
 (defmethod game-loop ((game game-state))
-  (with-slots (stage) game
+  (with-slots (map stage) game
     (reset-game game)
+    (recompute-draw-props +default-window-width+ +default-window-height+ map)
+
     (sdl2:with-init (:everything)
       (sdl2:with-window (window :title "puck-man"
                                 :flags '(:input-focus :resizable :shown)
@@ -201,8 +191,7 @@
           (sdl2:with-event-loop (:method :poll)
             (:windowevent (:event event :data1 width :data2 height)
                           (when (= event sdl2-ffi:+sdl-windowevent-resized+) ;; Window resized
-                            (setf *tile-edge* (get-tile-edge width height (game-map game)))
-                            (setf *draw-start* (get-draw-start width height (game-map game)))))
+                            (recompute-draw-props width height map)))
             (:keyup (:keysym keysym)
                     (let ((keycode (sdl2:scancode-value keysym)))
                       (when (sdl2:scancode= keycode :scancode-escape)
@@ -231,9 +220,6 @@
             (:quit () t)))))))
 
 (defparameter *default-map* (with-open-file (input "resources/default.map") (make-game-map input)))
-(defparameter *tile-edge* (get-tile-edge +default-window-width+ +default-window-height+ *default-map*))
-(defparameter *draw-start* (get-draw-start +default-window-width+ +default-window-height+ *default-map*))
-
 (defun game-main ()
   (let* ((player (make-instance 'player :position (player-spawn *default-map*)))
          (game-state (make-instance 'game-state

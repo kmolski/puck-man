@@ -14,7 +14,7 @@
                 (return (list width height))))
 
 (defun char->tile (character)
-  "Convert a character to a map tile."
+  "Convert a character to a map tile symbol."
   (case character
     ((#\- #\|) 'wall)
     (#\A       'portal-A)
@@ -105,7 +105,8 @@
 
 (defmethod initialize-instance :after ((map game-map) &rest rest)
   (declare (ignore rest))
-  (setf (slot-value map 'max-ghosts) (length (ghost-spawns map))))
+  (with-slots (ghost-spawns max-ghosts) map
+    (setf max-ghosts (length ghost-spawns))))
 
 (defun get-next-tile-pos (position direction)
   "Get the position (x . y) of the next tile in the given direction,
