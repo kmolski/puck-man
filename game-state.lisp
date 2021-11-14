@@ -57,7 +57,8 @@
 
 (defmethod initialize-instance :after ((ghost ghost) &rest rest &key index &allow-other-keys)
   (declare (ignore rest))
-  (setf (slot-value ghost 'time-to-respawn) (* index *default-respawn-time*)))
+  (with-slots (time-to-respawn) ghost
+    (setf time-to-respawn (* index *default-respawn-time*))))
 
 (defmethod draw ((ghost ghost) renderer)
   "Draw the ghost with the given renderer."
@@ -165,8 +166,7 @@
 
 (defmethod init-game ((game game-state))
   (with-slots (player ghosts stage map) game
-    ;; Reset player state
-    (with-slots (position actual-position special-ability) player
+    (with-slots (position actual-position special-ability) player ;; reset player state
       (setf position (player-spawn map))
       (setf actual-position (player-spawn map))
       (setf special-ability nil))
@@ -178,8 +178,14 @@
   (loop for g in (game-ghosts game)
         do (draw g renderer)))
 
+(defmethod draw-dialog ((game game-state) text)
+  (format t "Drawing ~A to the screen~%" text))
+
+(defmethod draw-hud ((game game-state))
+  (format t "Drawing HUD to the screen~%"))
+
 (defmethod game-loop ((game game-state))
-  (with-slots (map stage) game
+  (with-slots (map stage time-at-pause timer-start) game
     (reset-game game)
     (recompute-draw-props +default-window-width+ +default-window-height+ map)
 
@@ -194,13 +200,17 @@
                             (recompute-draw-props width height map)))
             (:keyup (:keysym keysym)
                     (let ((keycode (sdl2:scancode-value keysym)))
-                      (when (sdl2:scancode= keycode :scancode-escape)
-                        (sdl2:push-event :quit))
+                      (if (sdl2:scancode= keycode :scancode-escape)
+                          (sdl2:push-event :quit))
                       (case stage
-                        (start ())
-                        (countdown ())
+                        (start (setf time-at-pause 0)
+                               (setf timer-start (get-universal-time))
+                               (setf stage 'countdown))
+                        (countdown (if (sdl2:scancode= keycode :scancode-p)
+                                       (setf stage 'paused)))
                         (playing ())
-                        (paused ())
+                        (paused (if (sdl2:scancode= keycode :scancode-p)
+                                    (setf stage 'playing)))
                         (defeat ()))))
             (:idle ()
                    (sdl2:set-render-draw-color renderer 0 0 0 255)
@@ -208,11 +218,17 @@
                    (draw (game-map game) renderer)
 
                    (ecase stage
-                     (init (init-game game))
-                     (start (start-game game renderer))
-                     (countdown )
+                     (init      (init-game game))
+                     (start     (draw-entities game renderer)
+                                (draw-dialog "Press any key to start the game."))
+                     (countdown (draw-entities game renderer)
+                                (draw-hud)
+                                (when (> (- (get-universal-time) timer-start) *time-to-start*)
+                                  (setf time-at-pause 0)
+                                  (setf timer-start (get-universal-time))
+                                  (setf stage 'playing)))
                      (playing )
-                     (paused )
+                     (paused    (draw-dialog "Game paused. Press 'P' to unpause."))
                      (defeat))
 
                    (sdl2:render-present renderer)
@@ -222,7 +238,7 @@
 (defparameter *default-map* (with-open-file (input "resources/default.map") (make-game-map input)))
 (defun game-main ()
   (let* ((player (make-instance 'player :position (player-spawn *default-map*)))
-         (game-state (make-instance 'game-state
-                                    :map *default-map*
-                                    :player player)))
+         (game-state (make-instance 'game-state :map *default-map* :player player)))
     (game-loop game-state)))
+
+;; (push '*default-pathname-defaults* asdf:*central-registry*)
