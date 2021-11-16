@@ -69,8 +69,9 @@
 
 (defmethod initialize-instance :after ((ghost ghost) &rest rest &key index &allow-other-keys)
   (declare (ignore rest))
-  (with-slots (time-to-respawn) ghost
-    (setf time-to-respawn (* index *default-respawn-time*))))
+  (with-slots (time-to-respawn tracking-strategy) ghost
+    (setf time-to-respawn (* index *default-respawn-time*))
+    (setf (slot-value tracking-strategy 'owner) ghost)))
 
 (defmethod draw ((ghost ghost) renderer)
   "Draw the ghost with the given renderer."
@@ -271,3 +272,5 @@
     (game-loop game-state)))
 
 ;; (push '*default-pathname-defaults* asdf:*central-registry*)
+;; (asdf:load-system :puck-man)
+;; (game-main)
