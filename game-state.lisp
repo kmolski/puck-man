@@ -27,6 +27,18 @@
                :documentation "The game that the entity belongs to"))
   (:documentation "This class represents a basic game entity"))
 
+(defun get-squared-distance (pos1 pos2)
+  (+ (expt (- (car pos1) (car pos2)) 2)
+     (expt (- (cdr pos1) (cdr pos2)) 2)))
+
+(defun get-opposite-direction (direction)
+  (ecase direction
+    (up    'down)
+    (left  'right)
+    (down  'up)
+    (right 'left)
+    (none  'none)))
+
 (defgeneric can-traverse-tile-p (entity tile)
   (:documentation "Checks if the entity can enter the map tile"))
 
@@ -66,14 +78,33 @@
          (rect (sdl2:make-rect (+ (car *draw-start*) (* (car (entity-position ghost)) *tile-edge*))
                                (+ (cdr *draw-start*) (* (cdr (entity-position ghost)) *tile-edge*))
                                *tile-edge* *tile-edge*))
-         (color (cond
-                  ((eq ghost-strategy #'track-follow) '(192 0 255 255))
-                  ((eq ghost-strategy #'track-patrol) '(0 192 255 255))
-                  ((eq ghost-strategy #'track-ambush) '(192 192 0 255))
-                  ((eq ghost-strategy #'track-random) '(0 255 0 255))
-                  (t '(255 255 255 255)))))
+         (color (etypecase ghost-strategy
+                  (track-follow '(192 0 255 255))
+                  (track-patrol '(0 192 255 255))
+                  (track-ambush '(192 192 0 255))
+                  (track-random '(0 255 0 255)))))
     (apply #'sdl2:set-render-draw-color renderer color)
     (sdl2:render-fill-rect renderer rect)))
+
+(defclass tracking-strategy ()
+  ((owner :documentation "The ghost object that owns the strategy")
+   (next-dir :documentation "Direction of the ghost's next move")))
+
+(defgeneric get-target ())
+(defgeneric get-next-dir ())
+(defgeneric get-move ())
+
+(defclass track-follow (tracking-strategy)
+  ())
+
+(defclass track-patrol (tracking-strategy)
+  ())
+
+(defclass track-ambush (tracking-strategy)
+  ())
+
+(defclass track-random (tracking-strategy)
+  ())
 
 (defclass player (game-entity)
   ((position :documentation "Apparent position (x . y) of the player")
@@ -125,16 +156,12 @@
     (setf game-state game)))
 
 (defun get-random-strategy ()
-  (ecase (random 4)
-    (0 #'track-follow)
-    (1 #'track-ambush)
-    (2 #'track-patrol)
-    (3 #'track-random)))
-
-(defun track-follow () ())
-(defun track-ambush () ())
-(defun track-patrol () ())
-(defun track-random () ())
+  (let ((class (ecase (random 4)
+                 (0 'track-follow)
+                 (1 'track-ambush)
+                 (2 'track-patrol)
+                 (3 'track-random))))
+    (make-instance class)))
 
 (defun get-random-ghost-ability ()
   ())
@@ -144,13 +171,15 @@
     (setf ghosts (list))
     (with-slots (ghost-spawn-gate ghost-spawns max-ghosts) map
       (push (make-instance 'ghost :index 0 :position ghost-spawn-gate
-                                  :game-state game :tracking-strategy #'track-follow)
+                                  :tracking-strategy (make-instance 'track-follow)
+                                  :game-state game)
             ghosts)
       (loop with ghosts-with-abilities = (min level (- max-ghosts 1))
             for i from 1
             for spawn-place in ghost-spawns
             for new-ghost = (make-instance 'ghost :index i :position spawn-place
-                                                  :game-state game :tracking-strategy (get-random-strategy))
+                                                  :tracking-strategy (get-random-strategy)
+                                                  :game-state game)
             when (> ghosts-with-abilities 0)
               do (setf (slot-value new-ghost 'special-ability)
                        (get-random-ghost-ability))

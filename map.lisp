@@ -81,7 +81,7 @@
   ((tiles :initarg :tiles
           :initform (error "no value for slot 'tiles'")
           :reader map-tiles
-          :documentation "2D array of map tiles")
+          :documentation "2D array of map tile symbols")
    (ghost-spawns :initarg :ghost-spawns
                  :initform (error "no value for slot 'ghost-spawns'")
                  :reader ghost-spawns
@@ -101,7 +101,8 @@
    (max-ghosts :reader max-ghosts
                :documentation "Max amount of ghosts, based on the ghost spawn count")
    (texture :reader map-texture
-            :documentation "Cached SDL2 texture of the whole map")))
+            :documentation "Cached SDL2 texture of the whole map"))
+  :documentation "Representation of the game map's tiles, spawns and portals")
 
 (defmethod initialize-instance :after ((map game-map) &rest rest)
   (declare (ignore rest))
@@ -157,7 +158,7 @@
           when (eql (aref map-tiles rand-x rand-y) 'empty)
             do (setf (aref map-tiles rand-x rand-y) 'super-dot)
                (decf superdots-left))
-    (loop for y below map-height
+    (loop for y below map-height ; The remaining dots are regular dots
           do (loop for x below map-width
                    when (eql (aref map-tiles x y) 'empty)
                      do (setf (aref map-tiles x y) 'dot)
@@ -177,7 +178,7 @@
                      do (setf (aref map-tiles x y) 'empty)))))
 
 (defmethod draw ((map game-map) renderer)
-  "Draw the map with the given renderer."
+  "Draw the map with the renderer."
   ;; TODO: render the map to a cached texture here!
   ;; TODO: extract get-map-dimensions
   (let* ((map-dimensions (array-dimensions (map-tiles map)))
