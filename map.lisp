@@ -180,7 +180,6 @@
 (defmethod draw ((map game-map) renderer)
   "Draw the map with the renderer."
   ;; TODO: render the map to a cached texture here!
-  ;; TODO: extract get-map-dimensions
   (let* ((map-dimensions (array-dimensions (map-tiles map)))
          (map-width  (first map-dimensions))
          (map-height (second map-dimensions)))
