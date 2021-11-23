@@ -178,7 +178,34 @@
        t))
 
 (defmethod check-collision ((player player))
-  ())
+  (with-slots (ability game position) player
+      (let* ((map (game-map game))
+             (current-tile (tile-at map position)))
+        (case current-tile
+          (dot (progn (set-tile-at map position 'empty)
+                      (incf (game-score game) 10)
+                      (decf (game-dots game))))
+          (super-dot (progn (set-tile-at map position 'empty)
+                            (incf (game-score game) 100)
+                            (setf ability (get-random-player-ability))))))))
+
+(defmethod move-and-check-collision :before ((player player))
+  (with-slots (ability apparent-position direction game next-direction position speed) player
+    (setf apparent-position position)
+    (let ((map (game-map game)))
+      (when (and (next-tile-exists-p map position direction)
+                 (can-traverse-tile-p player (tile-at map (get-next-tile-pos position direction))))
+        (setf direction next-direction)
+        (setf next-direction 'none)))
+    (when ability
+      (if (> (ability-active-time ability) (ability-duration ability))
+          (ability-reset ability)
+          (ability-before-move ability)))))
+
+(defmethod move-and-check-collision :after ((player player))
+  (with-slots (ability) player
+      (when ability
+        (ability-after-move ability))))
 
 (defmethod draw ((player player) renderer)
   "Draw the player with the given renderer."
@@ -204,12 +231,14 @@
    (window :initarg window
            ; :initform (error "no value for slot 'window'"))
            )
-   (level :initform 0)
-   (score :initform 0)
-   (dots :initform 0)
-   (lives :initform 0)
-   (timer-start :initform (get-time-of-day))
-   (time-at-pause :initform 0)
+   (level :initform 1)
+   (score :accessor game-score
+          :initform 0)
+   (dots :accessor game-dots
+         :initform 0)
+   (lives :initform *default-lives*)
+   (timer-start)
+   (time-at-pause)
    (stage :initform 'init)))
 
 (defmethod initialize-instance :after ((game game-state) &rest rest)
@@ -226,6 +255,9 @@
     (make-instance class)))
 
 (defun get-random-ghost-ability ()
+  ())
+
+(defun get-random-player-ability ()
   ())
 
 (defmethod generate-ghosts ((game game-state))

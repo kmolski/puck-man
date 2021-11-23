@@ -124,6 +124,11 @@
   (destructuring-bind (x . y) position
     (aref (map-tiles map) x y)))
 
+(defmethod set-tile-at ((map game-map) position value)
+  "Set the tile at position (x . y) to the provided value."
+  (destructuring-bind (x . y) position
+    (setf (aref (map-tiles map) x y) value)))
+
 (defmethod get-other-portal-pos ((map game-map) position)
   "Get the position of the other portal from the pair."
   (let* ((tile (tile-at map position))
