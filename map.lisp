@@ -102,7 +102,7 @@
                :documentation "Max amount of ghosts, based on the ghost spawn count")
    (texture :reader map-texture
             :documentation "Cached SDL2 texture of the whole map"))
-  :documentation "Representation of the game map's tiles, spawns and portals")
+  (:documentation "Representation of the game map's tiles, spawns and portals"))
 
 (defmethod initialize-instance :after ((map game-map) &rest rest)
   (declare (ignore rest))

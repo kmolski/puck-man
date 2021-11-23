@@ -51,6 +51,28 @@
 (defgeneric draw (entity renderer)
   (:documentation "Draw the entity with the given renderer."))
 
+(defmethod move-and-check-collision ((entity game-entity))
+  (with-slots (direction position speed) entity
+      (let* ((game (entity-game entity))
+             (map (game-map game)))
+        (loop for i below (entity-speed entity)
+              for next-tile = (tile-at map (get-next-tile-pos position direction))
+              when (can-traverse-tile-p entity next-tile)
+                do (move-to-next-tile entity direction)
+                   (when (portal-p next-tile)
+                     (setf position (get-other-portal-pos map position)))
+                   (when (check-collision entity)
+                     nil) ;; TODO: signal collision
+                   ))))
+
+(defmethod move-to-next-tile ((entity game-entity) direction)
+  (with-slots (position) entity
+    (case direction
+      (up    (decf (cdr position) (/ 1.0 64)))
+      (left  (decf (car position) (/ 1.0 64)))
+      (right (incf (cdr position) (/ 1.0 64)))
+      (down  (incf (car position) (/ 1.0 64))))))
+
 (defclass ghost (game-entity)
   ((direction :initform 'left
               :documentation "The direction that the ghost is facing")
@@ -73,6 +95,30 @@
     (setf time-to-respawn (* index *default-respawn-time*))
     (setf (slot-value tracking-strategy 'owner) ghost)))
 
+(defmethod can-traverse-tile-p ((ghost ghost) tile)
+  (and (member tile '(empty portal-A portal-B portal-C portal-D
+                      dot super-dot spawn-gate player-spawn))
+       t))
+
+(defmethod check-collision ((ghost ghost))
+  (with-slots (game position) ghost
+    (equal position (entity-position (game-player game)))))
+
+(defmethod move-and-check-collision :before ((ghost ghost))
+  (with-slots (ability alive direction game position speed time-to-respawn tracking-strategy) ghost
+    (when (and (not alive) (> (game-duration game) time-to-respawn))
+      (setf alive t)
+      (setf position (ghost-spawn-gate (game-map game)))
+      (setf speed 1))
+    (when (and alive ability)
+      (ability-before-move ability))
+    (setf direction (get-move tracking-strategy))))
+
+(defmethod move-and-check-collision :after ((ghost ghost))
+  (with-slots (ability alive) ghost
+      (when (and alive ability)
+        (ability-after-move ability))))
+
 (defmethod draw ((ghost ghost) renderer)
   "Draw the ghost with the given renderer."
   (let* ((ghost-strategy (ghost-strategy ghost))
@@ -93,7 +139,7 @@
 
 (defgeneric get-target ())
 (defgeneric get-next-dir ())
-(defgeneric get-move ())
+(defgeneric get-move (tracking-strategy))
 
 (defclass track-follow (tracking-strategy)
   ())
@@ -108,16 +154,31 @@
   ())
 
 (defclass player (game-entity)
-  ((position :documentation "Apparent position (x . y) of the player")
+  ((position :documentation "Actual position (x . y) of the player")
    (direction :initform 'none
               :documentation "The direction that the player is facing")
    (next-direction :initform 'none
                    :reader player-next-dir
                    :documentation "Direction advice for the player")
-   (actual-position :reader player-actual-position
-                      :documentation "Player's actual position (x . y)")
+   (apparent-position :reader player-position
+                      :documentation "Player's apperent position (x . y)")
    (special-ability :initform nil
                     :documentation "The player's ability")))
+
+(defmethod set-next-dir ((player player) keycode)
+  (with-slots (next-direction) player
+    (cond ((sdl2:scancode= keycode :scancode-up)    (setf next-direction 'up))
+          ((sdl2:scancode= keycode :scancode-left)  (setf next-direction 'left))
+          ((sdl2:scancode= keycode :scancode-down)  (setf next-direction 'down))
+          ((sdl2:scancode= keycode :scancode-right) (setf next-direction 'right)))))
+
+(defmethod can-traverse-tile-p ((player player) tile)
+  (and (member tile '(empty portal-A portal-B portal-C portal-D
+                      dot super-dot spawn-gate player-spawn))
+       t))
+
+(defmethod check-collision ((player player))
+  ())
 
 (defmethod draw ((player player) renderer)
   "Draw the player with the given renderer."
@@ -203,19 +264,45 @@
     (generate-ghosts game)
     (setf stage 'start)))
 
+(defmethod simulate-entities ((game game-state))
+  (with-slots (dots ghosts level map player stage) game
+    (loop for g in (game-ghosts game)
+          do (move-and-check-collision g))
+    (move-and-check-collision player)
+    (when (= dots 0)
+      (incf level)
+      (setf dots (fill-with-dots map))
+      (setf stage 'init)
+      ;; (draw-dialog-with-timeout (format nil "Congratulations! You're not at level ~A!" level))
+      ))
+  ;; TODO: catch collision:
+  ;; (decf lives)
+  ;; (if (= lives 0)
+  ;;     (setf stage 'defeat)
+  ;;     (progn (setf stage 'init)
+  ;;            (draw-dialog-with-timeout
+  ;;              (format nil "You got caught, but you still have ~A ~A left!"
+  ;;                      lives
+  ;;                      (if (= lives 1) "life" "lives")))))
+  )
+
+(defmethod game-duration ((game game-state))
+  (with-slots (time-at-pause timer-start) game
+    (+ (- (get-universal-time) timer-start) time-at-pause)))
+
 (defmethod draw-entities ((game game-state) renderer)
   (draw (game-player game) renderer)
   (loop for g in (game-ghosts game)
         do (draw g renderer)))
 
-(defmethod draw-dialog ((game game-state) text)
-  (format t "Drawing ~A to the screen~%" text))
-
-(defmethod draw-hud ((game game-state))
+(defmethod draw-hud ((game game-state) renderer)
   (format t "Drawing HUD to the screen~%"))
 
+(defun draw-dialog (renderer text)
+  (format t "Drawing ~A to the screen~%" text))
+
 (defmethod game-loop ((game game-state))
-  (with-slots (map stage time-at-pause timer-start) game
+  (with-slots (map player stage time-at-pause timer-start) game
     (reset-game game)
     (recompute-draw-props +default-window-width+ +default-window-height+ map)
 
@@ -238,10 +325,15 @@
                                (setf stage 'countdown))
                         (countdown (if (sdl2:scancode= keycode :scancode-p)
                                        (setf stage 'paused)))
-                        (playing ())
+                        (playing (when (sdl2:scancode= keycode :scancode-p)
+                                   (setf stage 'paused)
+                                   (incf time-at-pause (- (get-universal-time) timer-start)))
+                                 (set-next-dir player keycode)))
                         (paused (if (sdl2:scancode= keycode :scancode-p)
                                     (setf stage 'playing)))
-                        (defeat ()))))
+                        (defeat (when (sdl2:scancode= keycode :scancode-r)
+                                  (reset-game game)
+                                  (setf stage 'init)))))
             (:idle ()
                    (sdl2:set-render-draw-color renderer 0 0 0 255)
                    (sdl2:render-clear renderer)
@@ -250,16 +342,18 @@
                    (ecase stage
                      (init      (init-game game))
                      (start     (draw-entities game renderer)
-                                (draw-dialog "Press any key to start the game."))
+                                (draw-dialog renderer "Press any key to start the game."))
                      (countdown (draw-entities game renderer)
-                                (draw-hud)
+                                (draw-hud game renderer)
                                 (when (> (- (get-universal-time) timer-start) *time-to-start*)
                                   (setf time-at-pause 0)
                                   (setf timer-start (get-universal-time))
                                   (setf stage 'playing)))
-                     (playing )
-                     (paused    (draw-dialog "Game paused. Press 'P' to unpause."))
-                     (defeat))
+                     (playing   (simulate-entities game)
+                                (draw-entities game renderer)
+                                (draw-hud game renderer))
+                     (paused    (draw-dialog renderer "Game paused. Press 'P' to unpause."))
+                     (defeat    (draw-dialog renderer "Game over! Press 'R' to restart.")))
 
                    (sdl2:render-present renderer)
                    (sdl2:delay 33))
