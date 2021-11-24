@@ -117,7 +117,8 @@
       (up    (cons x (1- y)))
       (left  (cons (1- x) y))
       (down  (cons x (1+ y)))
-      (right (cons (1+ x) y)))))
+      (right (cons (1+ x) y))
+      (none  position))))
 
 (defmethod tile-at ((map game-map) position)
   "Get the tile at position (x . y)."
@@ -146,7 +147,8 @@
       (up    (> (floor pos-y) 0))
       (left  (> (floor pos-x) 0))
       (down  (< (ceiling pos-y) (1- (second tile-array-dims))))
-      (right (< (ceiling pos-x) (1- (first tile-array-dims)))))))
+      (right (< (ceiling pos-x) (1- (first tile-array-dims))))
+      (none  nil))))
 
 (defmethod fill-with-dots ((map game-map))
   "Fill the map with regular and super dots."

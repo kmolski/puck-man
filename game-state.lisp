@@ -25,7 +25,7 @@
    (game-state :initarg :game-state
                :reader entity-game
                :documentation "The game that the entity belongs to"))
-  (:documentation "This class represents a basic game entity"))
+  (:documentation "Represents a basic game entity"))
 
 (defun get-squared-distance (pos1 pos2)
   (+ (expt (- (car pos1) (car pos2)) 2)
@@ -81,19 +81,16 @@
           :documentation "T if the ghost is alive")
    (time-to-respawn :reader ghost-time-to-respawn
                     :documentation "Ghost respawn time")
-   (tracking-strategy :initarg :tracking-strategy
-                      :initform (error "no value for slot 'tracking-strategy'")
-                      :reader ghost-strategy
+   (tracking-strategy :accessor ghost-strategy
                       :documentation "Ghost's tracking strategy")
-   (special-ability :initform nil
-                    :reader ghost-ability
-                    :documentation "Ghost's special ability")))
+   (ability :initform nil
+            :accessor ghost-ability
+            :documentation "Ghost's special ability")))
 
 (defmethod initialize-instance :after ((ghost ghost) &rest rest &key index &allow-other-keys)
   (declare (ignore rest))
   (with-slots (time-to-respawn tracking-strategy) ghost
-    (setf time-to-respawn (* index *default-respawn-time*))
-    (setf (slot-value tracking-strategy 'owner) ghost)))
+    (setf time-to-respawn (* index *default-respawn-time*))))
 
 (defmethod can-traverse-tile-p ((ghost ghost) tile)
   (and (member tile '(empty portal-A portal-B portal-C portal-D
@@ -101,14 +98,14 @@
        t))
 
 (defmethod check-collision ((ghost ghost))
-  (with-slots (game position) ghost
-    (equal position (entity-position (game-player game)))))
+  (with-slots (game-state position) ghost
+    (equal position (entity-position (game-player game-state)))))
 
 (defmethod move-and-check-collision :before ((ghost ghost))
-  (with-slots (ability alive direction game position speed time-to-respawn tracking-strategy) ghost
-    (when (and (not alive) (> (game-duration game) time-to-respawn))
+  (with-slots (ability alive direction game-state position speed time-to-respawn tracking-strategy) ghost
+    (when (and (not alive) (> (game-duration game-state) time-to-respawn))
       (setf alive t)
-      (setf position (ghost-spawn-gate (game-map game)))
+      (setf position (copy-list (ghost-spawn-gate (game-map game-state))))
       (setf speed 1))
     (when (and alive ability)
       (ability-before-move ability))
@@ -134,36 +131,140 @@
     (sdl2:render-fill-rect renderer rect)))
 
 (defclass tracking-strategy ()
-  ((owner :documentation "The ghost object that owns the strategy")
-   (next-dir :documentation "Direction of the ghost's next move")))
+  ((owner :initarg :owner
+          :initform (error "no value for slot 'owner'")
+          :documentation "The ghost object that owns the strategy")
+   (next-direction :initform 'none
+                   :documentation "Direction of the ghost's next move")))
 
-(defgeneric get-target ())
-(defgeneric get-next-dir ())
-(defgeneric get-move (tracking-strategy))
+(defgeneric get-target (tracking-strategy))
 
-(defclass track-follow (tracking-strategy)
-  ())
+(defmethod get-next-dir ((strategy tracking-strategy) choices)
+  (with-slots (next-direction) strategy
+    (if choices
+        (car (reduce (lambda (a b) (if (< (cdr a) (cdr b)) a b)) choices))
+        next-direction)))
+
+(defun get-possible-moves (current-direction current-position map owner target-position)
+  (loop for direction in '(up left down right)
+            for next-position = (get-next-tile-pos current-position direction)
+            when (and (not (eq current-direction (get-opposite-direction direction)))
+                      (next-tile-exists-p map current-position direction)
+                      (can-traverse-tile-p owner (tile-at map next-position)))
+              collect (cons direction (get-squared-distance target-position next-position))))
+
+(defmethod get-move ((strategy tracking-strategy))
+  (with-slots (next-direction owner) strategy
+    (let* ((current-direction next-direction)
+           (target-position (get-target strategy))
+           (map (game-map (entity-game owner)))
+           (owner-position (entity-position owner))
+           (current-position
+             (if (next-tile-exists-p map owner-position current-direction)
+                 (get-next-tile-pos owner-position current-direction)
+                 owner-position))
+           (choices (get-possible-moves current-direction current-position map owner target-position)))
+      (setf next-direction (get-next-dir strategy choices))
+      current-direction)))
+
+(defclass track-follow (tracking-strategy) ())
+
+(defmethod get-target ((strategy track-follow))
+  (with-slots (owner) strategy
+    (player-position (game-player (entity-game owner)))))
 
 (defclass track-patrol (tracking-strategy)
-  ())
+  ((center :documentation "Position of the map center")
+   (radius :documentation "Max radius from the map center")))
 
-(defclass track-ambush (tracking-strategy)
-  ())
+(defmethod initialize-instance :after ((strategy track-patrol) &rest rest)
+  (declare (ignore rest))
+  (with-slots (center owner radius) strategy
+    (let* ((map (game-map (entity-game owner)))
+           (map-dimensions (array-dimensions (map-tiles map)))
+           (map-width  (first map-dimensions))
+           (map-height (second map-dimensions)))
+    (setf center (cons (random map-width) (random map-height)))
+    (setf radius (max map-width map-height)))))
+
+(defmethod get-target ((strategy track-patrol))
+  (slot-value strategy 'center))
+
+(defmethod get-next-dir ((strategy track-patrol) choices)
+  (with-slots (next-direction owner radius) strategy
+    (if choices
+        (let ((in-radius (remove-if (lambda (x) (> (cdr x) (expt radius 2))) choices)))
+          (car (if in-radius
+                   (nth (random (length in-radius)) in-radius)
+                   (reduce #'min choices :key #'cdr))))
+        next-direction)))
+
+(defparameter *ambush-max-lookahead* 5)
+(defparameter *ambush-switch-to-follow-range* 5.0)
+
+(defclass track-ambush (tracking-strategy) ())
+
+(defmethod get-target ((strategy track-ambush))
+  (with-slots (next-direction owner) strategy
+    (let* ((game (entity-game owner))
+           (player (game-player game))
+           (map (game-map game))
+           (player-direction (entity-direction player))
+           (player-position (player-position player))
+           (owner-position (entity-position owner))
+           (current-position
+             (if (next-tile-exists-p map owner-position next-direction)
+                 (get-next-tile-pos owner-position next-direction)
+                 owner-position))
+           (distance (sqrt (get-squared-distance player-position current-position))))
+      (when (> distance *ambush-switch-to-follow-range*)
+        (loop for i below *ambush-max-lookahead*
+              for next-player-position = (get-next-tile-pos player-position player-direction)
+              if (and (next-tile-exists-p map player-position player-direction)
+                      (can-traverse-tile-p player (tile-at map next-player-position)))
+                do (setf player-position next-player-position)
+              else
+                do (return)))
+      player-position)))
+
+(defparameter *random-time-between-strat-changes* 10.0)
 
 (defclass track-random (tracking-strategy)
-  ())
+  ((current-strategy :documentation "The current tracking strategy")
+   (timer :initform (get-universal-time)
+          :documentation "Time of the last strategy switch")))
+
+(defmethod initialize-instance :after ((strategy track-random) &rest rest &key owner &allow-other-keys)
+  (declare (ignore rest))
+  (with-slots (current-strategy) strategy
+    (setf current-strategy (get-random-strategy owner 3))))
+
+(defmethod get-target ((strategy track-random))
+  (with-slots (current-strategy owner timer) strategy
+    (when (> (- timer (get-universal-time)) *random-time-between-strat-changes*)
+      (setf current-strategy (get-random-strategy owner 3)))
+    (get-target current-strategy)))
+
+(defmethod get-next-dir ((strategy track-random) choices)
+  (with-slots (current-strategy) strategy
+    (get-next-dir current-strategy choices)))
 
 (defclass player (game-entity)
-  ((position :documentation "Actual position (x . y) of the player")
+  ((ability :initform nil
+            :documentation "The player's ability")
+   (position :documentation "Actual position (x . y) of the player")
    (direction :initform 'none
               :documentation "The direction that the player is facing")
    (next-direction :initform 'none
                    :reader player-next-dir
                    :documentation "Direction advice for the player")
    (apparent-position :reader player-position
-                      :documentation "Player's apperent position (x . y)")
-   (special-ability :initform nil
-                    :documentation "The player's ability")))
+                      :documentation "Player's apperent position (x . y)")))
+
+(defmethod initialize-instance :after ((player player) &rest rest)
+  (declare (ignore rest))
+  (with-slots (apparent-position position) player
+    (setf apparent-position position)))
 
 (defmethod set-next-dir ((player player) keycode)
   (with-slots (next-direction) player
@@ -178,21 +279,21 @@
        t))
 
 (defmethod check-collision ((player player))
-  (with-slots (ability game position) player
-      (let* ((map (game-map game))
+  (with-slots (ability game-state position) player
+      (let* ((map (game-map game-state))
              (current-tile (tile-at map position)))
         (case current-tile
           (dot (progn (set-tile-at map position 'empty)
-                      (incf (game-score game) 10)
-                      (decf (game-dots game))))
+                      (incf (game-score game-state) 10)
+                      (decf (game-dots game-state))))
           (super-dot (progn (set-tile-at map position 'empty)
-                            (incf (game-score game) 100)
+                            (incf (game-score game-state) 100)
                             (setf ability (get-random-player-ability))))))))
 
 (defmethod move-and-check-collision :before ((player player))
-  (with-slots (ability apparent-position direction game next-direction position speed) player
+  (with-slots (ability apparent-position direction game-state next-direction position speed) player
     (setf apparent-position position)
-    (let ((map (game-map game)))
+    (let ((map (game-map game-state)))
       (when (and (next-tile-exists-p map position direction)
                  (can-traverse-tile-p player (tile-at map (get-next-tile-pos position direction))))
         (setf direction next-direction)
@@ -246,13 +347,13 @@
   (with-slots (game-state) (game-player game)
     (setf game-state game)))
 
-(defun get-random-strategy ()
-  (let ((class (ecase (random 4)
+(defun get-random-strategy (owner &optional (max-index 4))
+  (let ((class (ecase (random max-index)
                  (0 'track-follow)
                  (1 'track-ambush)
                  (2 'track-patrol)
                  (3 'track-random))))
-    (make-instance class)))
+    (make-instance class :owner owner)))
 
 (defun get-random-ghost-ability ()
   ())
@@ -264,19 +365,19 @@
   (with-slots (ghosts level map) game
     (setf ghosts (list))
     (with-slots (ghost-spawn-gate ghost-spawns max-ghosts) map
-      (push (make-instance 'ghost :index 0 :position ghost-spawn-gate
-                                  :tracking-strategy (make-instance 'track-follow)
-                                  :game-state game)
-            ghosts)
+      (let* ((position (copy-list ghost-spawn-gate))
+             (new-ghost (make-instance 'ghost :index 0 :position position :game-state game)))
+        (setf (ghost-strategy new-ghost) (make-instance 'track-follow :owner new-ghost))
+        (push new-ghost ghosts))
+
       (loop with ghosts-with-abilities = (min level (- max-ghosts 1))
             for i from 1
             for spawn-place in ghost-spawns
-            for new-ghost = (make-instance 'ghost :index i :position spawn-place
-                                                  :tracking-strategy (get-random-strategy)
-                                                  :game-state game)
+            for position = (copy-list spawn-place)
+            for new-ghost = (make-instance 'ghost :index i :position position :game-state game)
+            do (setf (ghost-strategy new-ghost) (get-random-strategy new-ghost))
             when (> ghosts-with-abilities 0)
-              do (setf (slot-value new-ghost 'special-ability)
-                       (get-random-ghost-ability))
+              do (setf (ghost-ability new-ghost) (get-random-ghost-ability))
                  (decf ghosts-with-abilities)
             do (push new-ghost ghosts)))))
 
@@ -289,10 +390,9 @@
 
 (defmethod init-game ((game game-state))
   (with-slots (player ghosts stage map) game
-    (with-slots (position actual-position special-ability) player ;; reset player state
+    (with-slots (position ability) player ;; reset player state
       (setf position (player-spawn map))
-      (setf actual-position (player-spawn map))
-      (setf special-ability nil))
+      (setf ability nil))
     (generate-ghosts game)
     (setf stage 'start)))
 
@@ -360,12 +460,12 @@
                         (playing (when (sdl2:scancode= keycode :scancode-p)
                                    (setf stage 'paused)
                                    (incf time-at-pause (- (get-universal-time) timer-start)))
-                                 (set-next-dir player keycode)))
+                                 (set-next-dir player keycode))
                         (paused (if (sdl2:scancode= keycode :scancode-p)
                                     (setf stage 'playing)))
                         (defeat (when (sdl2:scancode= keycode :scancode-r)
                                   (reset-game game)
-                                  (setf stage 'init)))))
+                                  (setf stage 'init))))))
             (:idle ()
                    (sdl2:set-render-draw-color renderer 0 0 0 255)
                    (sdl2:render-clear renderer)
@@ -393,7 +493,7 @@
 
 (defparameter *default-map* (with-open-file (input "resources/default.map") (make-game-map input)))
 (defun game-main ()
-  (let* ((player (make-instance 'player :position (player-spawn *default-map*)))
+  (let* ((player (make-instance 'player :position (copy-list (player-spawn *default-map*))))
          (game-state (make-instance 'game-state :map *default-map* :player player)))
     (game-loop game-state)))
 
