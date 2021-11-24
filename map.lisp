@@ -109,7 +109,7 @@
   (with-slots (ghost-spawns max-ghosts) map
     (setf max-ghosts (length ghost-spawns))))
 
-(defun get-next-tile-pos (position direction)
+(defun get-next-tile-pos (position direction step)
   "Get the position (x . y) of the next tile in the given direction,
    starting from the given position (x . y)."
   (destructuring-bind (x . y) position

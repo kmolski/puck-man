@@ -3,6 +3,8 @@
 (defvar *tile-edge*)
 (defvar *draw-start*)
 
+(defparameter *frame-delay* 32)
+
 (defun get-tile-edge (window-width window-height map)
   "Calculate the map tile edge length (in pixels) based on
   the window width+height and map dimenstions."

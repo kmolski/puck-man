@@ -51,6 +51,8 @@
 (defgeneric draw (entity renderer)
   (:documentation "Draw the entity with the given renderer."))
 
+(defparameter *move-step* 1) ;;(/ 1.0 32))
+
 (defmethod move-and-check-collision ((entity game-entity))
   (with-slots (direction position speed) entity
       (let* ((game (entity-game entity))
@@ -68,10 +70,11 @@
 (defmethod move-to-next-tile ((entity game-entity) direction)
   (with-slots (position) entity
     (case direction
-      (up    (decf (cdr position) (/ 1.0 64)))
-      (left  (decf (car position) (/ 1.0 64)))
-      (right (incf (cdr position) (/ 1.0 64)))
-      (down  (incf (car position) (/ 1.0 64))))))
+      (up    (decf (cdr position) *move-step*))
+      (left  (decf (car position) *move-step*))
+      (right (incf (car position) *move-step*))
+      (down  (incf (cdr position) *move-step*)))
+    (format t "Position after: ~A ~A ~%" entity position)))
 
 (defclass ghost (game-entity)
   ((direction :initform 'left
@@ -119,8 +122,8 @@
 (defmethod draw ((ghost ghost) renderer)
   "Draw the ghost with the given renderer."
   (let* ((ghost-strategy (ghost-strategy ghost))
-         (rect (sdl2:make-rect (+ (car *draw-start*) (* (car (entity-position ghost)) *tile-edge*))
-                               (+ (cdr *draw-start*) (* (cdr (entity-position ghost)) *tile-edge*))
+         (rect (sdl2:make-rect (round (+ (car *draw-start*) (* (car (entity-position ghost)) *tile-edge*)))
+                               (round (+ (cdr *draw-start*) (* (cdr (entity-position ghost)) *tile-edge*)))
                                *tile-edge* *tile-edge*))
          (color (etypecase ghost-strategy
                   (track-follow '(192 0 255 255))
@@ -134,7 +137,7 @@
   ((owner :initarg :owner
           :initform (error "no value for slot 'owner'")
           :documentation "The ghost object that owns the strategy")
-   (next-direction :initform 'none
+   (next-direction :initform 'left
                    :documentation "Direction of the ghost's next move")))
 
 (defgeneric get-target (tracking-strategy))
@@ -149,7 +152,7 @@
   (loop for direction in '(up left down right)
             for next-position = (get-next-tile-pos current-position direction)
             when (and (not (eq current-direction (get-opposite-direction direction)))
-                      (next-tile-exists-p map current-position direction)
+                      (next-tile-exists-p map next-position direction)
                       (can-traverse-tile-p owner (tile-at map next-position)))
               collect (cons direction (get-squared-distance target-position next-position))))
 
@@ -294,8 +297,8 @@
   (with-slots (ability apparent-position direction game-state next-direction position speed) player
     (setf apparent-position position)
     (let ((map (game-map game-state)))
-      (when (and (next-tile-exists-p map position direction)
-                 (can-traverse-tile-p player (tile-at map (get-next-tile-pos position direction))))
+      (when (and (next-tile-exists-p map position next-direction)
+                 (can-traverse-tile-p player (tile-at map (get-next-tile-pos position next-direction))))
         (setf direction next-direction)
         (setf next-direction 'none)))
     (when ability
@@ -310,8 +313,8 @@
 
 (defmethod draw ((player player) renderer)
   "Draw the player with the given renderer."
-  (let ((rect (sdl2:make-rect (+ (car *draw-start*) (* (car (entity-position player)) *tile-edge*))
-                              (+ (cdr *draw-start*) (* (cdr (entity-position player)) *tile-edge*))
+  (let ((rect (sdl2:make-rect (round (+ (car *draw-start*) (* (car (entity-position player)) *tile-edge*)))
+                              (round (+ (cdr *draw-start*) (* (cdr (entity-position player)) *tile-edge*)))
                               *tile-edge* *tile-edge*)))
     (sdl2:set-render-draw-color renderer 255 144 0 255)
     (sdl2:render-fill-rect renderer rect)))
@@ -488,7 +491,7 @@
                      (defeat    (draw-dialog renderer "Game over! Press 'R' to restart.")))
 
                    (sdl2:render-present renderer)
-                   (sdl2:delay 33))
+                   (sdl2:delay *frame-delay*))
             (:quit () t)))))))
 
 (defparameter *default-map* (with-open-file (input "resources/default.map") (make-game-map input)))
