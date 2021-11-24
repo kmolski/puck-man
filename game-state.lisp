@@ -62,7 +62,7 @@
               when (can-traverse-tile-p entity next-tile)
                 do (move-to-next-tile entity direction)
                    (when (portal-p next-tile)
-                     (setf position (get-other-portal-pos map position)))
+                     (setf position (copy-list (get-other-portal-pos map position))))
                    (when (check-collision entity)
                      nil) ;; TODO: signal collision
                    ))))
@@ -394,7 +394,7 @@
 (defmethod init-game ((game game-state))
   (with-slots (player ghosts stage map) game
     (with-slots (position ability) player ;; reset player state
-      (setf position (player-spawn map))
+      (setf position (copy-list (player-spawn map)))
       (setf ability nil))
     (generate-ghosts game)
     (setf stage 'start)))
@@ -458,8 +458,9 @@
                         (start (setf time-at-pause 0)
                                (setf timer-start (get-universal-time))
                                (setf stage 'countdown))
-                        (countdown (if (sdl2:scancode= keycode :scancode-p)
-                                       (setf stage 'paused)))
+                        (countdown (when (sdl2:scancode= keycode :scancode-p)
+                                     (setf stage 'paused))
+                                   (set-next-dir player keycode))
                         (playing (when (sdl2:scancode= keycode :scancode-p)
                                    (setf stage 'paused)
                                    (incf time-at-pause (- (get-universal-time) timer-start)))
