@@ -213,7 +213,7 @@
            (player (game-player game))
            (map (game-map game))
            (player-direction (entity-direction player))
-           (player-position (player-position player))
+           (player-position (copy-list (player-position player)))
            (owner-position (entity-position owner))
            (current-position
              (if (next-tile-exists-p map owner-position next-direction)
@@ -262,12 +262,12 @@
                    :reader player-next-dir
                    :documentation "Direction advice for the player")
    (apparent-position :reader player-position
-                      :documentation "Player's apperent position (x . y)")))
+                      :documentation "Player's apparent position (x . y)")))
 
 (defmethod initialize-instance :after ((player player) &rest rest)
   (declare (ignore rest))
   (with-slots (apparent-position position) player
-    (setf apparent-position position)))
+    (setf apparent-position (copy-list position))))
 
 (defmethod set-next-dir ((player player) keycode)
   (with-slots (next-direction) player
@@ -295,7 +295,7 @@
 
 (defmethod move-and-check-collision :before ((player player))
   (with-slots (ability apparent-position direction game-state next-direction position speed) player
-    (setf apparent-position position)
+    (setf apparent-position (copy-list position))
     (let ((map (game-map game-state)))
       (when (and (next-tile-exists-p map position next-direction)
                  (can-traverse-tile-p player (tile-at map (get-next-tile-pos position next-direction))))

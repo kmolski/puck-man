@@ -7,7 +7,7 @@
 
 (defun get-tile-edge (window-width window-height map)
   "Calculate the map tile edge length (in pixels) based on
-  the window width+height and map dimenstions."
+  the window width+height and map dimensions."
   (let* ((map-dimensions (array-dimensions (map-tiles map)))
          (map-width  (first map-dimensions))
          (map-height (second map-dimensions)))
@@ -16,7 +16,7 @@
 
 (defun get-draw-start (window-width window-height map)
   "Calculate the map position on the screen, based on
-  the window width+height and map dimenstions."
+  the window width+height and map dimensions."
   (let* ((map-dimensions (array-dimensions (map-tiles map)))
          (map-width  (first map-dimensions))
          (map-height (second map-dimensions)))
