@@ -51,29 +51,45 @@
 (defgeneric draw (entity renderer)
   (:documentation "Draw the entity with the given renderer."))
 
-(defparameter *move-step* 1) ;;(/ 1.0 32))
+(defparameter *move-step* (/ 1.0 32))
+
+(defmethod can-move-p ((entity game-entity) positions-and-tiles)
+  "Returns T if the entity can make the move described by positions-and-tiles."
+  (every (lambda (pos-and-tile) (can-traverse-tile-p entity (cdr pos-and-tile)))
+         positions-and-tiles))
+
+(defun get-move-direction (from-pos to-pos)
+  "Returns the direction of the move from-pos -> to-pos."
+  (append (if (< (car from-pos) (car to-pos)) '(right) '(left))
+          (if (< (cdr from-pos) (cdr to-pos)) '(down)  '(up))))
 
 (defmethod move-and-check-collision ((entity game-entity))
   (with-slots (direction position speed) entity
       (let* ((game (entity-game entity))
              (map (game-map game)))
         (loop for i below (entity-speed entity)
-              for next-tile = (tile-at map (get-next-tile-pos position direction))
-              when (can-traverse-tile-p entity next-tile)
-                do (move-to-next-tile entity direction)
-                   (when (portal-p next-tile)
-                     (setf position (copy-list (get-other-portal-pos map position))))
+              for prev-position = (copy-list position)
+              for next-tiles = (get-next-tiles map position direction *move-step*)
+              when (can-move-p entity next-tiles)
+                do (move-to-next-tile entity direction *move-step*)
+                   (loop for pos-and-tile in next-tiles
+                         for new-pos = (car pos-and-tile)
+                         for tile = (cdr pos-and-tile)
+                         when (and (member direction (get-move-direction prev-position new-pos)) (portal-p tile))
+                           do (setf position (copy-list (get-other-portal-pos map new-pos)))
+                              (move-to-next-tile entity direction *move-step*))
                    (when (check-collision entity)
                      nil) ;; TODO: signal collision
                    ))))
 
-(defmethod move-to-next-tile ((entity game-entity) direction)
+(defmethod move-to-next-tile ((entity game-entity) direction step)
   (with-slots (position) entity
+    (format t "Position before: ~A ~A, direction ~A~%" entity position direction)
     (case direction
-      (up    (decf (cdr position) *move-step*))
-      (left  (decf (car position) *move-step*))
-      (right (incf (car position) *move-step*))
-      (down  (incf (cdr position) *move-step*)))
+      (up    (decf (cdr position) step))
+      (left  (decf (car position) step))
+      (right (incf (car position) step))
+      (down  (incf (cdr position) step)))
     (format t "Position after: ~A ~A ~%" entity position)))
 
 (defclass ghost (game-entity)
@@ -150,11 +166,11 @@
 
 (defun get-possible-moves (current-direction current-position map owner target-position)
   (loop for direction in '(up left down right)
-            for next-position = (get-next-tile-pos current-position direction)
-            when (and (not (eq current-direction (get-opposite-direction direction)))
-                      (next-tile-exists-p map next-position direction)
-                      (can-traverse-tile-p owner (tile-at map next-position)))
-              collect (cons direction (get-squared-distance target-position next-position))))
+        for next-position = (get-next-pos current-position direction *move-step*)
+        for next-tiles = (get-next-tiles map current-position direction *move-step*)
+        when (and (not (eq current-direction (get-opposite-direction direction)))
+                  (can-move-p owner next-tiles))
+          collect (cons direction (get-squared-distance target-position next-position))))
 
 (defmethod get-move ((strategy tracking-strategy))
   (with-slots (next-direction owner) strategy
@@ -163,8 +179,8 @@
            (map (game-map (entity-game owner)))
            (owner-position (entity-position owner))
            (current-position
-             (if (next-tile-exists-p map owner-position current-direction)
-                 (get-next-tile-pos owner-position current-direction)
+             (if (tile-exists-p map (get-next-pos owner-position current-direction *move-step*))
+                 (get-next-pos owner-position current-direction *move-step*)
                  owner-position))
            (choices (get-possible-moves current-direction current-position map owner target-position)))
       (setf next-direction (get-next-dir strategy choices))
@@ -216,16 +232,15 @@
            (player-position (copy-list (player-position player)))
            (owner-position (entity-position owner))
            (current-position
-             (if (next-tile-exists-p map owner-position next-direction)
-                 (get-next-tile-pos owner-position next-direction)
+             (if (tile-exists-p map (get-next-pos owner-position next-direction *move-step*))
+                 (get-next-pos owner-position next-direction *move-step*)
                  owner-position))
            (distance (sqrt (get-squared-distance player-position current-position))))
       (when (> distance *ambush-switch-to-follow-range*)
         (loop for i below *ambush-max-lookahead*
-              for next-player-position = (get-next-tile-pos player-position player-direction)
-              if (and (next-tile-exists-p map player-position player-direction)
-                      (can-traverse-tile-p player (tile-at map next-player-position)))
-                do (setf player-position next-player-position)
+              for next-player-positions = (get-next-tiles map player-position player-direction *move-step*)
+              if (can-move-p player next-player-positions)
+                do (setf player-position (get-next-pos player-position player-direction *move-step*))
               else
                 do (return)))
       player-position)))
@@ -242,10 +257,13 @@
   (with-slots (current-strategy) strategy
     (setf current-strategy (get-random-strategy owner 3))))
 
-(defmethod get-target ((strategy track-random))
+(defmethod get-move :before ((strategy track-random))
   (with-slots (current-strategy owner timer) strategy
     (when (> (- timer (get-universal-time)) *random-time-between-strat-changes*)
-      (setf current-strategy (get-random-strategy owner 3)))
+      (setf current-strategy (get-random-strategy owner 3)))))
+
+(defmethod get-target ((strategy track-random))
+  (with-slots (current-strategy) strategy
     (get-target current-strategy)))
 
 (defmethod get-next-dir ((strategy track-random) choices)
@@ -281,26 +299,29 @@
                       dot super-dot spawn-gate player-spawn))
        t))
 
+(defun round-position (position)
+  (destructuring-bind (x . y) position
+    (cons (round x) (round y))))
+
 (defmethod check-collision ((player player))
   (with-slots (ability game-state position) player
       (let* ((map (game-map game-state))
-             (current-tile (tile-at map position)))
-        (case current-tile
-          (dot (progn (set-tile-at map position 'empty)
-                      (incf (game-score game-state) 10)
-                      (decf (game-dots game-state))))
-          (super-dot (progn (set-tile-at map position 'empty)
-                            (incf (game-score game-state) 100)
-                            (setf ability (get-random-player-ability))))))))
+             (rounded-pos (round-position position)))
+        (when (tile-exists-p map rounded-pos)
+          (case (tile-at map rounded-pos)
+            (dot (progn (set-tile-at map rounded-pos 'empty)
+                        (incf (game-score game-state) 10)
+                        (decf (game-dots game-state))))
+            (super-dot (progn (set-tile-at map rounded-pos 'empty)
+                              (incf (game-score game-state) 100)
+                              (setf ability (get-random-player-ability)))))))))
 
 (defmethod move-and-check-collision :before ((player player))
   (with-slots (ability apparent-position direction game-state next-direction position speed) player
     (setf apparent-position (copy-list position))
     (let ((map (game-map game-state)))
-      (when (and (next-tile-exists-p map position next-direction)
-                 (can-traverse-tile-p player (tile-at map (get-next-tile-pos position next-direction))))
-        (setf direction next-direction)
-        (setf next-direction 'none)))
+      (when (can-move-p player (get-next-tiles map position next-direction *move-step*))
+        (setf direction next-direction)))
     (when ability
       (if (> (ability-active-time ability) (ability-duration ability))
           (ability-reset ability)

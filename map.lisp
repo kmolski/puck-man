@@ -109,17 +109,6 @@
   (with-slots (ghost-spawns max-ghosts) map
     (setf max-ghosts (length ghost-spawns))))
 
-(defun get-next-tile-pos (position direction step)
-  "Get the position (x . y) of the next tile in the given direction,
-   starting from the given position (x . y)."
-  (destructuring-bind (x . y) position
-    (ecase direction
-      (up    (cons x (1- y)))
-      (left  (cons (1- x) y))
-      (down  (cons x (1+ y)))
-      (right (cons (1+ x) y))
-      (none  position))))
-
 (defmethod tile-at ((map game-map) position)
   "Get the tile at position (x . y)."
   (destructuring-bind (x . y) position
@@ -138,17 +127,36 @@
         (cdr portal-pair)
         (car portal-pair))))
 
-(defmethod next-tile-exists-p ((map game-map) position direction)
-  "Return T if the next tile in the given direction exists."
+(defmethod tile-exists-p ((map game-map) position)
+  "Return T if the tile in the given position exists."
   (let ((tile-array-dims (array-dimensions (map-tiles map)))
         (pos-x (car position))
         (pos-y (cdr position)))
+    (and (<= 0 pos-x (1- (first tile-array-dims)))
+         (<= 0 pos-y (1- (second tile-array-dims))))))
+
+(defun get-next-pos (position direction step)
+  "Get the position (x . y) of the next tile in the given direction,
+   starting from the given position (x . y)."
+  (destructuring-bind (x . y) position
     (ecase direction
-      (up    (> (floor pos-y) 0))
-      (left  (> (floor pos-x) 0))
-      (down  (< (ceiling pos-y) (1- (second tile-array-dims))))
-      (right (< (ceiling pos-x) (1- (first tile-array-dims))))
-      (none  nil))))
+      (up    (cons x (- y step)))
+      (left  (cons (- x step) y))
+      (down  (cons x (+ y step)))
+      (right (cons (+ x step) y))
+      (none  position))))
+
+(defmethod get-next-tiles ((map game-map) position direction step)
+  "Get the tiles that are occupied after the move is made.
+  The move is described by the position before the move, the direction and the coordinate delta."
+  (destructuring-bind (x . y) (get-next-pos position direction step)
+    (let* ((tile-positions (list (cons (floor x)   (floor y))     ; up-left
+                                 (cons (ceiling x) (floor y))     ; up-right
+                                 (cons (floor x)   (ceiling y))   ; down-left
+                                 (cons (ceiling x) (ceiling y)))) ; down-right
+           (existing (remove-if-not (lambda (pos) (tile-exists-p map pos))
+                                    tile-positions)))
+    (mapcar (lambda (pos) (cons pos (tile-at map pos))) existing))))
 
 (defmethod fill-with-dots ((map game-map))
   "Fill the map with regular and super dots."
