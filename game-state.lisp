@@ -216,7 +216,7 @@
         (let ((in-radius (remove-if (lambda (x) (> (cdr x) (expt radius 2))) choices)))
           (car (if in-radius
                    (nth (random (length in-radius)) in-radius)
-                   (reduce #'min choices :key #'cdr))))
+                   (reduce (lambda (a b) (if (< (cdr a) (cdr b)) a b)) choices))))
         next-direction)))
 
 (defparameter *ambush-max-lookahead* 5)
