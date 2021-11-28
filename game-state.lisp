@@ -63,6 +63,8 @@
   (append (if (< (car from-pos) (car to-pos)) '(right) '(left))
           (if (< (cdr from-pos) (cdr to-pos)) '(down)  '(up))))
 
+(define-condition entity-collision () ())
+
 (defmethod move-and-check-collision ((entity game-entity))
   (with-slots (direction position speed) entity
       (let* ((game (entity-game entity))
@@ -79,8 +81,7 @@
                            do (setf position (copy-list (get-other-portal-pos map new-pos)))
                               (move-to-next-tile entity direction *move-step*))
                    (when (check-collision entity)
-                     nil) ;; TODO: signal collision
-                   ))))
+                     (signal 'entity-collision))))))
 
 (defmethod move-to-next-tile ((entity game-entity) direction step)
   (with-slots (position) entity
@@ -118,7 +119,7 @@
 
 (defmethod check-collision ((ghost ghost))
   (with-slots (game-state position) ghost
-    (equal position (entity-position (game-player game-state)))))
+    (< (get-squared-distance position (entity-position (game-player game-state))) 0.5)))
 
 (defmethod move-and-check-collision :before ((ghost ghost))
   (with-slots (ability alive direction game-state position speed time-to-respawn tracking-strategy) ghost
@@ -420,27 +421,29 @@
     (generate-ghosts game)
     (setf stage 'start)))
 
+(defmethod handle-collision ((game game-state))
+  (with-slots (lives stage) game
+    (decf lives)
+    (if (= lives 0)
+        (setf stage 'defeat)
+        (progn (setf stage 'init)
+               ;; (draw-dialog-with-timeout
+               ;;  (format nil "You got caught, but you still have ~A ~A left!" lives
+               ;;          (if (= lives 1) "life" "lives")))
+               ))))
+
 (defmethod simulate-entities ((game game-state))
   (with-slots (dots ghosts level map player stage) game
-    (loop for g in (game-ghosts game)
-          do (move-and-check-collision g))
+    (handler-case (loop for g in (game-ghosts game)
+                        do (move-and-check-collision g))
+      (entity-collision () (handle-collision game)))
     (move-and-check-collision player)
     (when (= dots 0)
       (incf level)
       (setf dots (fill-with-dots map))
       (setf stage 'init)
       ;; (draw-dialog-with-timeout (format nil "Congratulations! You're not at level ~A!" level))
-      ))
-  ;; TODO: catch collision:
-  ;; (decf lives)
-  ;; (if (= lives 0)
-  ;;     (setf stage 'defeat)
-  ;;     (progn (setf stage 'init)
-  ;;            (draw-dialog-with-timeout
-  ;;              (format nil "You got caught, but you still have ~A ~A left!"
-  ;;                      lives
-  ;;                      (if (= lives 1) "life" "lives")))))
-  )
+      )))
 
 (defmethod game-duration ((game game-state))
   (with-slots (time-at-pause timer-start) game
