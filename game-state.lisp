@@ -1,5 +1,6 @@
 (require :alexandria)
 (require :sdl2)
+(require :sdl2-image)
 (require :str)
 (require :trivia)
 
@@ -148,7 +149,11 @@
                   (track-ambush '(192 192 0 255))
                   (track-random '(0 255 0 255)))))
     (apply #'sdl2:set-render-draw-color renderer color)
-    (sdl2:render-fill-rect renderer rect)))
+    (sdl2:render-copy renderer *spritemap-texture*
+                      :source-rect (sdl2:make-rect 0 144 +spritemap-entity-size+ +spritemap-entity-size+)
+                      :dest-rect rect)
+    ;; (sdl2:render-fill-rect renderer rect)
+    ))
 
 (defclass tracking-strategy ()
   ((owner :initarg :owner
@@ -350,6 +355,8 @@
   ((map :initarg :map
         :reader game-map
         :initform (error "no value for slot 'map'"))
+   (spritemap :initarg :spritemap
+              :initform (error "no value for slot 'spritemap'"))
    (player :initarg :player
            :reader game-player
            :initform (error "no value for slot 'player'"))
@@ -460,7 +467,7 @@
   (format t "Drawing ~A to the screen~%" text))
 
 (defmethod game-loop ((game game-state))
-  (with-slots (map player stage time-at-pause timer-start) game
+  (with-slots (map player spritemap stage time-at-pause timer-start) game
     (reset-game game)
     (recompute-draw-props +default-window-width+ +default-window-height+ map)
 
@@ -469,6 +476,7 @@
                                 :flags '(:input-focus :resizable :shown)
                                 :w +default-window-width+ :h +default-window-height+)
         (sdl2:with-renderer (renderer window :flags '(:accelerated :targettexture))
+          (setf *spritemap-texture* (sdl2:create-texture-from-surface renderer spritemap))
           (sdl2:with-event-loop (:method :poll)
             (:windowevent (:event event :data1 width :data2 height)
                           (when (= event sdl2-ffi:+sdl-windowevent-resized+) ;; Window resized
@@ -520,9 +528,10 @@
             (:quit () t)))))))
 
 (defparameter *default-map* (with-open-file (input "resources/default.map") (make-game-map input)))
+(defparameter *default-spritemap* (sdl2-image:load-png-rw "resources/spritemap.png"))
 (defun game-main ()
   (let* ((player (make-instance 'player :position (copy-list (player-spawn *default-map*))))
-         (game-state (make-instance 'game-state :map *default-map* :player player)))
+         (game-state (make-instance 'game-state :map *default-map* :spritemap *default-spritemap* :player player)))
     (game-loop game-state)))
 
 ;; (push '*default-pathname-defaults* asdf:*central-registry*)

@@ -3,6 +3,10 @@
 (defvar *tile-edge*)
 (defvar *draw-start*)
 
+(defconstant +spritemap-tile-size+ 12)
+(defconstant +spritemap-entity-size+ (* +spritemap-tile-size+ 2))
+(defvar *spritemap-texture*)
+
 (defparameter *frame-delay* 32)
 
 (defun get-tile-edge (window-width window-height map-width map-height)
