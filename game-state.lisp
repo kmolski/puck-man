@@ -80,8 +80,7 @@
                          when (and (member direction (get-move-direction prev-position new-pos)) (portal-p tile))
                            do (setf position (copy-list (get-other-portal-pos map new-pos)))
                               (move-to-next-tile entity direction *move-step*))
-                   (when (check-collision entity)
-                     (signal 'entity-collision))))))
+                   (check-collision entity)))))
 
 (defmethod move-to-next-tile ((entity game-entity) direction step)
   (with-slots (position) entity
@@ -119,7 +118,8 @@
 
 (defmethod check-collision ((ghost ghost))
   (with-slots (game-state position) ghost
-    (< (get-squared-distance position (entity-position (game-player game-state))) 0.5)))
+    (when (< (get-squared-distance position (entity-position (game-player game-state))) 0.5)
+      (signal 'entity-collision))))
 
 (defmethod move-and-check-collision :before ((ghost ghost))
   (with-slots (ability alive direction game-state position speed time-to-respawn tracking-strategy) ghost
@@ -434,9 +434,8 @@
 
 (defmethod simulate-entities ((game game-state))
   (with-slots (dots ghosts level map player stage) game
-    (handler-case (loop for g in (game-ghosts game)
-                        do (move-and-check-collision g))
-      (entity-collision () (handle-collision game)))
+    (loop for g in (game-ghosts game)
+          do (move-and-check-collision g))
     (move-and-check-collision player)
     (when (= dots 0)
       (incf level)
@@ -509,7 +508,8 @@
                                   (setf time-at-pause 0)
                                   (setf timer-start (get-universal-time))
                                   (setf stage 'playing)))
-                     (playing   (simulate-entities game)
+                     (playing   (handler-case (simulate-entities game)
+                                  (entity-collision () (handle-collision game)))
                                 (draw-entities game renderer)
                                 (draw-hud game renderer))
                      (paused    (draw-dialog renderer "Game paused. Press 'P' to unpause."))
