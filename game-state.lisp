@@ -143,16 +143,16 @@
          (rect (sdl2:make-rect (round (+ (car *draw-start*) (* (car (entity-position ghost)) *tile-edge*)))
                                (round (+ (cdr *draw-start*) (* (cdr (entity-position ghost)) *tile-edge*)))
                                *tile-edge* *tile-edge*))
-         (color (etypecase ghost-strategy
-                  (track-follow '(192 0 255 255))
-                  (track-patrol '(0 192 255 255))
-                  (track-ambush '(192 192 0 255))
-                  (track-random '(0 255 0 255)))))
-    (apply #'sdl2:set-render-draw-color renderer color)
+         (direction (entity-direction ghost))
+         (time (get-universal-time))
+         (sprite-vec (etypecase ghost-strategy
+                       (track-follow *blinky-sprites*)
+                       (track-patrol *clyde-sprites*)
+                       (track-ambush *pinky-sprites*)
+                       (track-random *inky-sprites*))))
     (sdl2:render-copy renderer *spritemap-texture*
-                      :source-rect (sdl2:make-rect 0 144 +spritemap-entity-size+ +spritemap-entity-size+)
+                      :source-rect (select-ghost-sprite sprite-vec direction time)
                       :dest-rect rect)
-    ;; (sdl2:render-fill-rect renderer rect)
     ))
 
 (defclass tracking-strategy ()
@@ -342,9 +342,13 @@
   "Draw the player with the given renderer."
   (let ((rect (sdl2:make-rect (round (+ (car *draw-start*) (* (car (entity-position player)) *tile-edge*)))
                               (round (+ (cdr *draw-start*) (* (cdr (entity-position player)) *tile-edge*)))
-                              *tile-edge* *tile-edge*)))
-    (sdl2:set-render-draw-color renderer 255 144 0 255)
-    (sdl2:render-fill-rect renderer rect)))
+                              *tile-edge* *tile-edge*))
+        (direction (entity-direction player))
+        (time (get-universal-time)))
+    (sdl2:render-copy renderer *spritemap-texture*
+                      :source-rect (select-player-sprite direction time)
+                      :dest-rect rect)
+    ))
 
 ;; game model stuff
 
@@ -537,3 +541,36 @@
 ;; (push '*default-pathname-defaults* asdf:*central-registry*)
 ;; (asdf:load-system :puck-man)
 ;; (game-main)
+
+(defun make-entity-rect (x y)
+  (sdl2:make-rect x y +spritemap-entity-size+ +spritemap-entity-size+))
+
+(defun make-sprite-vector (x-offset y-offset row-length)
+  (map 'vector #'identity
+       (loop for i below row-length
+             collect (make-entity-rect (+ (* i +spritemap-entity-size+) x-offset) y-offset))))
+
+(defparameter *player-sprites* (make-sprite-vector 0 72 8))
+
+(defun select-player-sprite (direction time)
+  (let ((time-offset (if (evenp time) 0 2))
+        (direction-offset (ecase direction
+                            ((none left) 0)
+                            (up          1)
+                            (down        5)
+                            (right       4))))
+    (elt *player-sprites* (+ direction-offset time-offset))))
+
+(defparameter *blinky-sprites* (make-sprite-vector 0 144 8)) ;; follow
+(defparameter *inky-sprites* (make-sprite-vector 192 192 8)) ;; random
+(defparameter *pinky-sprites* (make-sprite-vector 0 192 8))  ;; ambush
+(defparameter *clyde-sprites* (make-sprite-vector 0 216 8)) ;; patrol
+
+(defun select-ghost-sprite (sprite-vector direction time)
+  (let ((time-offset (if (evenp time) 0 1))
+        (direction-offset (ecase direction
+                            ((none left) 4)
+                            (up          6)
+                            (down        2)
+                            (right       0))))
+    (elt sprite-vector (+ direction-offset time-offset))))
