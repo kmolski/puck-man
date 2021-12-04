@@ -62,14 +62,14 @@
           else ; Next tile row, start from x=0
              do (setf (car current-pos) 0)
                 (incf (cdr current-pos)))
-    (when (not player-spawn)
+    (unless player-spawn
       (error "There must be a player spawn ('P') on the map!"))
-    (when (not ghost-spawn-gate)
+    (unless ghost-spawn-gate
       (error "There must be a ghost spawn gate ('#') on the map!"))
     (when (= 0 (length ghost-spawns))
       (error "There must be at least one ghost spawn ('G') on the map!"))
     (loop for (portal-name portal-mapping) on portals by #'cddr
-          when (not (cdr portal-mapping))
+          unless (cdr portal-mapping)
             do (error "Incorrect mapping for ~a!" portal-name))
     (make-instance 'game-map :tiles tile-array
                              :ghost-spawns ghost-spawns
@@ -103,6 +103,7 @@
   (:documentation "Representation of the game map's tiles, spawns and portals"))
 
 (defmethod initialize-instance :after ((map game-map) &rest rest)
+  "After method responsible for initializing the max ghost count."
   (declare (ignore rest))
   (with-slots (ghost-spawns max-ghosts) map
     (setf max-ghosts (length ghost-spawns))))
@@ -192,9 +193,11 @@
 (defparameter *dot-sprites* (make-sprite-vector +spritemap-tile-size+ 228 0 2))
 
 (defun select-dot-sprite (tile)
+  "Returns the sprite for the given tile."
   (elt *dot-sprites* (ecase tile (dot 0) (super-dot 1))))
 
 (defun get-dot-dest (x y)
+  "Get the final screen position of a dot sprite."
   (let* ((quarter-tile-edge (floor (/ *tile-edge* 4)))
          (half-edge (* 2 quarter-tile-edge))
          (adjusted-x (+ quarter-tile-edge x))

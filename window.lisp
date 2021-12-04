@@ -1,3 +1,5 @@
+(require :sdl2)
+
 (defconstant +default-window-width+ 800)
 (defconstant +default-window-height+ 600)
 (defvar *tile-edge*)
@@ -28,6 +30,7 @@
     (setf *draw-start* (get-draw-start width height map-width map-height))))
 
 (defun make-sprite-vector (tile-size x-offset y-offset row-length)
+  "Create a vector of sprite resource descriptors (SDL2 rects with the sprite inside)."
   (map 'vector #'identity
        (loop for i below row-length
              collect (sdl2:make-rect (+ (* i tile-size) x-offset) y-offset
