@@ -9,24 +9,29 @@
    (time-to-respawn :reader ghost-time-to-respawn
                     :documentation "Ghost respawn time")
    (tracking-strategy :accessor ghost-strategy
-                      :documentation "Ghost's tracking strategy")))
+                      :documentation "Ghost's tracking strategy"))
+  (:documentation "Represents a ghost entity"))
 
 (defmethod initialize-instance :after ((ghost ghost) &rest rest &key index &allow-other-keys)
+  "Set the time-to-respawn based on the ghost's index."
   (declare (ignore rest))
   (with-slots (time-to-respawn tracking-strategy) ghost
     (setf time-to-respawn (* index *default-respawn-time*))))
 
 (defmethod can-traverse-tile-p ((ghost ghost) tile)
+  "Returns T if the ghost can traverse the tile."
   (and (member tile '(empty portal-A portal-B portal-C portal-D
                       dot super-dot spawn-gate player-spawn))
        t))
 
 (defmethod check-collision ((ghost ghost))
+  "Signals a condition if the ghost has collided with the player."
   (with-slots (game-state position) ghost
     (when (< (get-squared-distance position (entity-position (game-player game-state))) 0.5)
       (signal 'entity-collision))))
 
 (defmethod move-and-check-collision :before ((ghost ghost))
+  "Spawn the ghost and set its direction based on the ghost's strategy."
   (with-slots (alive direction game-state position speed time-to-respawn tracking-strategy) ghost
     (when (and (not alive) (> (game-duration game-state) time-to-respawn))
       (setf alive t)
@@ -40,6 +45,7 @@
 (defparameter *clyde-sprites* (make-sprite-vector +spritemap-entity-size+ 0 216 8)) ;; patrol
 
 (defun select-ghost-sprite (sprite-vector direction time)
+  "Select the correct sprite descriptor based on the tracking strategy, direction and time."
   (let ((time-offset (if (evenp time) 0 1))
         (direction-offset (ecase direction
                             ((none left) 4)

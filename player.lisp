@@ -8,14 +8,17 @@
                    :reader player-next-dir
                    :documentation "Direction advice for the player")
    (apparent-position :reader player-position
-                      :documentation "Player's apparent position (x . y)")))
+                      :documentation "Player's apparent position (x . y)"))
+  (:documentation "Represents the player entity"))
 
 (defmethod initialize-instance :after ((player player) &rest rest)
+  "Set the player's apparent position to their real position."
   (declare (ignore rest))
   (with-slots (apparent-position position) player
     (setf apparent-position (copy-list position))))
 
 (defmethod set-next-dir ((player player) keycode)
+  "Set the player's next direction based on the player's input."
   (with-slots (next-direction) player
     (cond ((sdl2:scancode= keycode :scancode-up)    (setf next-direction 'up))
           ((sdl2:scancode= keycode :scancode-left)  (setf next-direction 'left))
@@ -23,15 +26,18 @@
           ((sdl2:scancode= keycode :scancode-right) (setf next-direction 'right)))))
 
 (defmethod can-traverse-tile-p ((player player) tile)
+  "Returns T if the player can traverse the tile."
   (and (member tile '(empty portal-A portal-B portal-C portal-D
                       dot super-dot spawn-gate player-spawn))
        t))
 
 (defun round-position (position)
+  "Round the position to the nearest integral coordinates."
   (destructuring-bind (x . y) position
     (cons (round x) (round y))))
 
 (defmethod check-collision ((player player))
+  "Check if the player has collected a dot."
   (with-slots (game-state position) player
       (let* ((map (game-map game-state))
              (rounded-pos (round-position position)))
@@ -44,6 +50,7 @@
                               (incf (game-score game-state) 100))))))))
 
 (defmethod move-and-check-collision :before ((player player))
+  "Set the player's apparent position and change their direction if possible."
   (with-slots (apparent-position direction game-state next-direction position speed) player
     (setf apparent-position (copy-list position))
     (let ((map (game-map game-state)))
@@ -56,6 +63,7 @@
                (make-sprite-vector +spritemap-entity-size+ 0 72 8)))
 
 (defun select-player-sprite (direction time)
+  "Select the player's sprite based on their direction and time."
   (let ((time-offset (if (evenp time) 0 2))
         (direction-offset (ecase direction ((none left) 1) (up 2) (down 6) (right 5))))
     (elt *player-sprites* (* (+ direction-offset time-offset) (if (eq direction 'none) 0 1)))))

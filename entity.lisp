@@ -45,6 +45,7 @@
 (define-condition entity-collision () ())
 
 (defmethod move-and-check-collision ((entity game-entity))
+  "Move the entity and execute the check-collision method."
   (with-slots (direction position speed) entity
       (let* ((game (entity-game entity))
              (map (game-map game)))
@@ -62,6 +63,7 @@
                    (check-collision entity)))))
 
 (defmethod move-to-next-tile ((entity game-entity) direction step)
+  "Move the entity to the next tile in the given direction."
   (with-slots (position) entity
     (case direction
       (up    (decf (cdr position) step))
