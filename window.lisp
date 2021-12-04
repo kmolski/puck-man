@@ -26,3 +26,9 @@
          (map-height (second map-dimensions)))
     (setf *tile-edge* (get-tile-edge width height map-width map-height))
     (setf *draw-start* (get-draw-start width height map-width map-height))))
+
+(defun make-sprite-vector (tile-size x-offset y-offset row-length)
+  (map 'vector #'identity
+       (loop for i below row-length
+             collect (sdl2:make-rect (+ (* i tile-size) x-offset) y-offset
+                                     tile-size tile-size))))

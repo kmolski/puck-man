@@ -99,9 +99,7 @@
                  :reader player-spawn
                  :documentation "Player spawn position (x . y)")
    (max-ghosts :reader max-ghosts
-               :documentation "Max amount of ghosts, based on the ghost spawn count")
-   (texture :reader map-texture
-            :documentation "Cached SDL2 texture of the whole map"))
+               :documentation "Max amount of ghosts, based on the ghost spawn count"))
   (:documentation "Representation of the game map's tiles, spawns and portals"))
 
 (defmethod initialize-instance :after ((map game-map) &rest rest)
@@ -136,8 +134,7 @@
          (<= 0 pos-y (1- (second tile-array-dims))))))
 
 (defun get-next-pos (position direction step)
-  "Get the position (x . y) of the next tile in the given direction,
-   starting from the given position (x . y)."
+  "Get the position (x . y) after a move in the direction, starting from the position (x . y)."
   (destructuring-bind (x . y) position
     (ecase direction
       (up    (cons x (- y step)))
@@ -192,9 +189,20 @@
                    when (or (eql tile 'dot) (eql tile 'super-dot))
                      do (setf (aref map-tiles x y) 'empty)))))
 
+(defparameter *dot-sprites* (make-sprite-vector +spritemap-tile-size+ 228 0 2))
+
+(defun select-dot-sprite (tile)
+  (elt *dot-sprites* (ecase tile (dot 0) (super-dot 1))))
+
+(defun get-dot-dest (x y)
+  (let* ((quarter-tile-edge (floor (/ *tile-edge* 4)))
+         (half-edge (* 2 quarter-tile-edge))
+         (adjusted-x (+ quarter-tile-edge x))
+         (adjusted-y (+ quarter-tile-edge y)))
+    (sdl2:make-rect adjusted-x adjusted-y half-edge half-edge)))
+
 (defmethod draw ((map game-map) renderer)
   "Draw the map with the renderer."
-  ;; TODO: render the map to a cached texture here!
   (let* ((map-dimensions (array-dimensions (map-tiles map)))
          (map-width  (first map-dimensions))
          (map-height (second map-dimensions)))
@@ -203,9 +211,10 @@
           do (loop for x-index below map-width
                    for x = (+ (car *draw-start*) (* x-index *tile-edge*))
                    for tile = (tile-at map (cons x-index y-index))
-                   for color = (case tile
-                                 (wall      '(0 0 255 255))
-                                 (otherwise '(0 0 0 0)))
-                   for rect = (sdl2:make-rect x y *tile-edge* *tile-edge*)
-                   do (apply #'sdl2:set-render-draw-color renderer color)
-                      (sdl2:render-fill-rect renderer rect)))))
+                   do (case tile
+                        ((dot super-dot) (sdl2:render-copy renderer *spritemap-texture*
+                                                           :source-rect (select-dot-sprite tile)
+                                                           :dest-rect (get-dot-dest x y)))
+                        (otherwise (apply #'sdl2:set-render-draw-color renderer
+                                          (if (eq tile 'wall) '(0 0 255 255) '(0 0 0 0)))
+                                   (sdl2:render-fill-rect renderer (sdl2:make-rect x y *tile-edge* *tile-edge*))))))))

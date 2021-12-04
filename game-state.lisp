@@ -85,13 +85,11 @@
 
 (defmethod move-to-next-tile ((entity game-entity) direction step)
   (with-slots (position) entity
-    (format t "Position before: ~A ~A, direction ~A~%" entity position direction)
     (case direction
       (up    (decf (cdr position) step))
       (left  (decf (car position) step))
       (right (incf (car position) step))
-      (down  (incf (cdr position) step)))
-    (format t "Position after: ~A ~A ~%" entity position)))
+      (down  (incf (cdr position) step)))))
 
 (defclass ghost (game-entity)
   ((direction :initform 'left
@@ -137,10 +135,24 @@
       (when (and alive ability)
         (ability-after-move ability))))
 
+(defparameter *blinky-sprites* (make-sprite-vector +spritemap-entity-size+ 0 144 8)) ;; follow
+(defparameter *inky-sprites* (make-sprite-vector +spritemap-entity-size+ 192 192 8)) ;; random
+(defparameter *pinky-sprites* (make-sprite-vector +spritemap-entity-size+ 0 192 8))  ;; ambush
+(defparameter *clyde-sprites* (make-sprite-vector +spritemap-entity-size+ 0 216 8)) ;; patrol
+
+(defun select-ghost-sprite (sprite-vector direction time)
+  (let ((time-offset (if (evenp time) 0 1))
+        (direction-offset (ecase direction
+                            ((none left) 4)
+                            (up          6)
+                            (down        2)
+                            (right       0))))
+    (elt sprite-vector (+ direction-offset time-offset))))
+
 (defmethod draw ((ghost ghost) renderer)
   "Draw the ghost with the given renderer."
   (let* ((ghost-strategy (ghost-strategy ghost))
-         (rect (sdl2:make-rect (round (+ (car *draw-start*) (* (car (entity-position ghost)) *tile-edge*)))
+         (dest (sdl2:make-rect (round (+ (car *draw-start*) (* (car (entity-position ghost)) *tile-edge*)))
                                (round (+ (cdr *draw-start*) (* (cdr (entity-position ghost)) *tile-edge*)))
                                *tile-edge* *tile-edge*))
          (direction (entity-direction ghost))
@@ -152,8 +164,7 @@
                        (track-random *inky-sprites*))))
     (sdl2:render-copy renderer *spritemap-texture*
                       :source-rect (select-ghost-sprite sprite-vec direction time)
-                      :dest-rect rect)
-    ))
+                      :dest-rect dest)))
 
 (defclass tracking-strategy ()
   ((owner :initarg :owner
@@ -338,17 +349,26 @@
       (when ability
         (ability-after-move ability))))
 
+(defparameter *player-sprites*
+  (concatenate 'vector
+               (make-sprite-vector +spritemap-entity-size+ 0 168 1)
+               (make-sprite-vector +spritemap-entity-size+ 0 72 8)))
+
+(defun select-player-sprite (direction time)
+  (let ((time-offset (if (evenp time) 0 2))
+        (direction-offset (ecase direction ((none left) 1) (up 2) (down 6) (right 5))))
+    (elt *player-sprites* (* (+ direction-offset time-offset) (if (eq direction 'none) 0 1)))))
+
 (defmethod draw ((player player) renderer)
   "Draw the player with the given renderer."
-  (let ((rect (sdl2:make-rect (round (+ (car *draw-start*) (* (car (entity-position player)) *tile-edge*)))
+  (let ((dest (sdl2:make-rect (round (+ (car *draw-start*) (* (car (entity-position player)) *tile-edge*)))
                               (round (+ (cdr *draw-start*) (* (cdr (entity-position player)) *tile-edge*)))
                               *tile-edge* *tile-edge*))
         (direction (entity-direction player))
         (time (get-universal-time)))
     (sdl2:render-copy renderer *spritemap-texture*
                       :source-rect (select-player-sprite direction time)
-                      :dest-rect rect)
-    ))
+                      :dest-rect dest)))
 
 ;; game model stuff
 
@@ -465,10 +485,15 @@
         do (draw g renderer)))
 
 (defmethod draw-hud ((game game-state) renderer)
-  (format t "Drawing HUD to the screen~%"))
+  ;; (format t "Drawing HUD to the screen~%")
+  )
 
 (defun draw-dialog (renderer text)
-  (format t "Drawing ~A to the screen~%" text))
+  ;; (format t "Drawing ~A to the screen~%" text)
+  )
+
+(defun draw-dialog-with-timeout (window renderer text)
+  ())
 
 (defmethod game-loop ((game game-state))
   (with-slots (map player spritemap stage time-at-pause timer-start) game
@@ -541,36 +566,3 @@
 ;; (push '*default-pathname-defaults* asdf:*central-registry*)
 ;; (asdf:load-system :puck-man)
 ;; (game-main)
-
-(defun make-entity-rect (x y)
-  (sdl2:make-rect x y +spritemap-entity-size+ +spritemap-entity-size+))
-
-(defun make-sprite-vector (x-offset y-offset row-length)
-  (map 'vector #'identity
-       (loop for i below row-length
-             collect (make-entity-rect (+ (* i +spritemap-entity-size+) x-offset) y-offset))))
-
-(defparameter *player-sprites* (make-sprite-vector 0 72 8))
-
-(defun select-player-sprite (direction time)
-  (let ((time-offset (if (evenp time) 0 2))
-        (direction-offset (ecase direction
-                            ((none left) 0)
-                            (up          1)
-                            (down        5)
-                            (right       4))))
-    (elt *player-sprites* (+ direction-offset time-offset))))
-
-(defparameter *blinky-sprites* (make-sprite-vector 0 144 8)) ;; follow
-(defparameter *inky-sprites* (make-sprite-vector 192 192 8)) ;; random
-(defparameter *pinky-sprites* (make-sprite-vector 0 192 8))  ;; ambush
-(defparameter *clyde-sprites* (make-sprite-vector 0 216 8)) ;; patrol
-
-(defun select-ghost-sprite (sprite-vector direction time)
-  (let ((time-offset (if (evenp time) 0 1))
-        (direction-offset (ecase direction
-                            ((none left) 4)
-                            (up          6)
-                            (down        2)
-                            (right       0))))
-    (elt sprite-vector (+ direction-offset time-offset))))
